@@ -48,4 +48,7 @@ export default defineConfig({
   staged: {
     '*': 'vp check --fix',
   },
+  worker: {
+    format: 'es',
+  },
 });

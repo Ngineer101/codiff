@@ -19,8 +19,8 @@ importers:
   .:
     dependencies:
       '@pierre/diffs':
-        specifier: ^1.1.22
-        version: 1.1.22(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: 1.2.0-beta.4
+        version: 1.2.0-beta.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@pierre/trees':
         specifier: 1.0.0-beta.3
         version: 1.0.0-beta.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -558,8 +558,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@pierre/diffs@1.1.22':
-    resolution: {integrity: sha512-1Iv7kdl6OABFCd1n2HQbGUiRHouXPaHoIjcb7Lwg8zeJKY5ph+cESFcGEyIiwW0NCbKGtYS2bTnXmI+Eze5dwg==}
+  '@pierre/diffs@1.2.0-beta.4':
+    resolution: {integrity: sha512-I4OlownVG7hiJl+G4IBHaJMbn90Eiv+jSB4OiI0Hcpxt1uYtyP7y8IW7tSgtdsQOoE5KCr/8+kkwi2MSnY4GDA==}
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
       react-dom: ^18.3.1 || ^19.0.0
@@ -2445,7 +2445,7 @@ snapshots:
   '@oxlint/binding-win32-x64-msvc@1.63.0':
     optional: true
 
-  '@pierre/diffs@1.1.22(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@pierre/diffs@1.2.0-beta.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@pierre/theme': 0.0.28
       '@shikijs/transformers': 3.23.0

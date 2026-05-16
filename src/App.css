@@ -135,50 +135,78 @@
   text-transform: uppercase;
 }
 
+.file-tree-shell,
 .file-tree {
   flex: 1;
   display: block;
   min-height: 0;
 }
 
+.file-tree {
+  height: 100%;
+}
+
 .review {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 10px 10px 22px;
 }
 
-.file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.code-view {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  width: 100%;
 }
 
-.diff-file {
-  background: var(--file-bg);
-  border: 1px solid var(--file-border);
-  box-shadow: 0 18px 80px -54px rgb(0 0 0 / 0.8);
+.code-view diffs-container {
+  background: var(--code-bg);
+  border: 0;
+  border-radius: 28px;
+  box-shadow:
+    0 0 0 1px var(--file-border),
+    0 18px 80px -54px rgb(0 0 0 / 0.8);
+  corner-shape: squircle;
+  display: block;
   overflow: hidden;
 }
 
-.diff-file.selected {
-  border-color: rgb(61 135 245 / 0.52);
+.code-view diffs-container:first-child {
+  margin-top: 0;
 }
 
-.diff-file.viewed .file-path {
-  color: var(--muted);
+.code-view [slot='header-custom'] {
+  display: block;
+  min-width: 0;
 }
 
-.diff-file-header {
+.codiff-file-header {
   align-items: center;
+  background: var(--file-bg);
+  box-shadow: inset 0 -1px 0 var(--file-border);
+  color: var(--text);
   display: grid;
   gap: 10px;
-  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
   min-height: 54px;
   padding: 9px 10px;
 }
 
-.icon-button,
-.viewed-button {
+.codiff-file-header.selected {
+  box-shadow:
+    inset 0 -1px 0 var(--file-border),
+    inset 0 0 0 1px rgb(61 135 245 / 0.52);
+}
+
+.codiff-file-header.viewed .codiff-file-path {
+  color: var(--muted);
+}
+
+.codiff-icon-button,
+.codiff-viewed-button {
   -webkit-app-region: no-drag;
   align-items: center;
   background: transparent;
@@ -189,19 +217,19 @@
   justify-content: center;
 }
 
-.icon-button {
+.codiff-icon-button {
   border-radius: 15px;
   corner-shape: squircle;
   height: 30px;
   width: 30px;
 }
 
-.icon-button:hover,
-.viewed-button:hover {
+.codiff-icon-button:hover,
+.codiff-viewed-button:hover {
   background: rgb(127 127 127 / 0.11);
 }
 
-.chevron {
+.codiff-chevron {
   border-bottom: 2px solid currentColor;
   border-right: 2px solid currentColor;
   height: 8px;
@@ -210,73 +238,76 @@
   width: 8px;
 }
 
-.chevron.collapsed {
+.codiff-chevron.collapsed {
   transform: rotate(-45deg) translateX(-2px);
 }
 
-.file-heading {
+.codiff-file-heading {
   min-width: 0;
 }
 
-.file-path,
-.file-old-path {
+.codiff-file-path,
+.codiff-file-old-path {
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.file-path {
+.codiff-file-path {
   font-size: 13px;
 }
 
-.file-old-path {
+.codiff-file-old-path {
   color: var(--muted);
   font-size: 11px;
   margin-top: 2px;
 }
 
-.status-badge,
-.section-label,
-.viewed-button {
+.codiff-status-badge,
+.codiff-section-badge,
+.codiff-viewed-button {
   border-radius: 14px;
   corner-shape: squircle;
   font-size: 12px;
   font-weight: 600;
 }
 
-.status-badge {
+.codiff-status-badge,
+.codiff-section-badge {
   background: rgb(127 127 127 / 0.11);
   color: var(--muted);
   padding: 5px 9px;
 }
 
-.status-badge.added,
-.status-badge.untracked {
+.codiff-status-badge.added,
+.codiff-status-badge.untracked,
+.codiff-section-badge.unstaged {
   color: rgb(31 122 68);
 }
 
-.status-badge.deleted {
+.codiff-status-badge.deleted {
   color: rgb(184 49 47);
 }
 
-.status-badge.renamed {
+.codiff-status-badge.renamed,
+.codiff-section-badge.staged {
   color: rgb(143 93 24);
 }
 
-.viewed-button {
+.codiff-viewed-button {
   border: 1px solid rgb(127 127 127 / 0.18);
   gap: 7px;
   min-height: 30px;
   padding: 0 12px;
 }
 
-.viewed-button.active {
+.codiff-viewed-button.active {
   border-color: color-mix(in srgb, var(--viewed) 44%, transparent);
   color: var(--viewed);
 }
 
-.viewed-checkbox {
+.codiff-viewed-checkbox {
   border: 1px solid rgb(127 127 127 / 0.42);
   border-radius: 5px;
   corner-shape: squircle;
@@ -285,12 +316,12 @@
   width: 14px;
 }
 
-.viewed-button.active .viewed-checkbox {
+.codiff-viewed-button.active .codiff-viewed-checkbox {
   background: var(--viewed);
   border-color: var(--viewed);
 }
 
-.viewed-button.active .viewed-checkbox::after {
+.codiff-viewed-button.active .codiff-viewed-checkbox::after {
   border-bottom: 2px solid var(--code-bg);
   border-right: 2px solid var(--code-bg);
   content: '';
@@ -300,29 +331,6 @@
   top: 1px;
   transform: rotate(45deg);
   width: 4px;
-}
-
-.diff-sections {
-  background: var(--code-bg);
-  border-top: 1px solid var(--file-border);
-}
-
-.diff-section + .diff-section {
-  border-top: 1px solid var(--file-border);
-}
-
-.section-label {
-  color: var(--muted);
-  padding: 9px 14px 0;
-}
-
-.binary-diff {
-  background: rgb(127 127 127 / 0.08);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  margin: 12px;
-  padding: 16px;
 }
 
 .loading,
@@ -363,11 +371,16 @@
     grid-template-columns: 220px minmax(0, 1fr);
   }
 
-  .diff-file-header {
+  .code-view {
+    font-size: 12px;
+  }
+
+  .codiff-file-header {
     grid-template-columns: 30px minmax(0, 1fr) auto;
   }
 
-  .status-badge {
+  .codiff-section-badge,
+  .codiff-status-badge {
     display: none;
   }
 }
