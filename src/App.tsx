@@ -1,6 +1,4 @@
 import {
-  DEFAULT_CODE_VIEW_FILE_METRICS,
-  DEFAULT_CODE_VIEW_LAYOUT,
   parsePatchFiles,
   registerCustomTheme,
   type CodeViewItem,
@@ -9,7 +7,7 @@ import {
 } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import dunkelTheme from './themes/dunkel.json' with { type: 'json' };
 import lichtTheme from './themes/licht.json' with { type: 'json' };
 import type { ChangedFile, DiffSection, GitFileStatus, RepositoryState } from './types.ts';
@@ -44,15 +42,17 @@ const statusForTree: Record<
   untracked: 'untracked',
 };
 
+// 11px needed to account for the box shadow around individual diffs
+const DEFAULT_PADDING = 11;
+
 const codeViewLayout = {
-  ...DEFAULT_CODE_VIEW_LAYOUT,
-  gap: 10,
-  paddingBottom: 12,
-  paddingTop: 0,
+  // 2px is used to account for a 10px gap with the 1px box shadows
+  gap: 12,
+  paddingBottom: DEFAULT_PADDING,
+  paddingTop: DEFAULT_PADDING,
 };
 
 const codeViewItemMetrics = {
-  ...DEFAULT_CODE_VIEW_FILE_METRICS,
   diffHeaderHeight: 54,
 };
 
@@ -68,7 +68,6 @@ const workerHighlighterOptions = {
 };
 
 const maxWorkerThreads = 3;
-const scrollSelectionActivationOffset = 10;
 
 const codeViewUnsafeCSS = `
   :host {
@@ -80,176 +79,16 @@ const codeViewUnsafeCSS = `
     --diffs-dark-bg: #1c1c1c;
   }
 
-  [data-diffs-header='custom'] {
-    background: var(--file-bg);
-    min-height: 54px;
-    position: relative;
-    z-index: 2;
+  /* Align scrollbar with number column */
+  [data-code]::-webkit-scrollbar-track {
+    margin-left: var(--diffs-column-number-width);
   }
 
-  [data-diffs-header='custom'] slot {
-    display: block;
-  }
-
-  .codiff-file-header {
-    align-items: center;
-    background: var(--file-bg);
-    box-shadow: inset 0 -1px 0 var(--file-border);
-    color: var(--text);
-    display: grid;
-    gap: 10px;
-    grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
-    min-height: 54px;
-    padding: 9px 10px;
-  }
-
-  .codiff-file-header.selected {
-    box-shadow:
-      inset 0 -1px 0 var(--file-border),
-      inset 0 0 0 1px rgb(61 135 245 / 0.52);
-  }
-
-  .codiff-file-header.viewed .codiff-file-path {
-    color: var(--muted);
-  }
-
-  .codiff-icon-button,
-  .codiff-viewed-button {
-    -webkit-app-region: no-drag;
-    align-items: center;
-    background: transparent;
-    border: 0;
-    color: var(--text);
-    cursor: pointer;
-    display: inline-flex;
-    justify-content: center;
-  }
-
-  .codiff-icon-button {
-    border-radius: 15px;
-    corner-shape: squircle;
-    height: 30px;
-    width: 30px;
-  }
-
-  .codiff-icon-button:hover,
-  .codiff-viewed-button:hover {
-    background: rgb(127 127 127 / 0.11);
-  }
-
-  .codiff-chevron {
-    border-bottom: 2px solid currentColor;
-    border-right: 2px solid currentColor;
-    height: 8px;
-    transform: rotate(45deg) translateY(-2px);
-    transition: transform 160ms ease;
-    width: 8px;
-  }
-
-  .codiff-chevron.collapsed {
-    transform: rotate(-45deg) translateX(-2px);
-  }
-
-  .codiff-file-heading {
-    min-width: 0;
-  }
-
-  .codiff-file-path,
-  .codiff-file-old-path {
-    font-family: var(--font-mono);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .codiff-file-path {
-    font-size: 13px;
-  }
-
-  .codiff-file-old-path {
-    color: var(--muted);
-    font-size: 11px;
-    margin-top: 2px;
-  }
-
-  .codiff-status-badge,
-  .codiff-section-badge,
-  .codiff-viewed-button {
-    border-radius: 14px;
-    corner-shape: squircle;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .codiff-status-badge,
-  .codiff-section-badge {
-    background: rgb(127 127 127 / 0.11);
-    color: var(--muted);
-    padding: 5px 9px;
-  }
-
-  .codiff-status-badge.added,
-  .codiff-status-badge.untracked,
-  .codiff-section-badge.unstaged {
-    color: rgb(31 122 68);
-  }
-
-  .codiff-status-badge.deleted {
-    color: rgb(184 49 47);
-  }
-
-  .codiff-status-badge.renamed,
-  .codiff-section-badge.staged {
-    color: rgb(143 93 24);
-  }
-
-  .codiff-viewed-button {
-    border: 1px solid rgb(127 127 127 / 0.18);
-    gap: 7px;
-    min-height: 30px;
-    padding: 0 12px;
-  }
-
-  .codiff-viewed-button.active {
-    border-color: color-mix(in srgb, var(--viewed) 44%, transparent);
-    color: var(--viewed);
-  }
-
-  .codiff-viewed-checkbox {
-    border: 1px solid rgb(127 127 127 / 0.42);
-    border-radius: 5px;
-    corner-shape: squircle;
-    height: 14px;
-    position: relative;
-    width: 14px;
-  }
-
-  .codiff-viewed-button.active .codiff-viewed-checkbox {
-    background: var(--viewed);
-    border-color: var(--viewed);
-  }
-
-  .codiff-viewed-button.active .codiff-viewed-checkbox::after {
-    border-bottom: 2px solid var(--code-bg);
-    border-right: 2px solid var(--code-bg);
-    content: '';
-    height: 7px;
-    left: 4px;
-    position: absolute;
-    top: 1px;
-    transform: rotate(45deg);
-    width: 4px;
-  }
-
-  @media (max-width: 880px) {
-    .codiff-file-header {
-      grid-template-columns: 30px minmax(0, 1fr) auto;
-    }
-
-    .codiff-section-badge,
-    .codiff-status-badge {
-      display: none;
-    }
+  /* Ensure right edge of scrollbar never gets cropped by rounded corners */
+  [data-file] [data-code]::-webkit-scrollbar-track,
+  [data-diff-type="single"] [data-code]::-webkit-scrollbar-track,
+  [data-diff-type="split"] [data-code][data-additions]::-webkit-scrollbar-track {
+    margin-right: 14px;
   }
 `;
 
@@ -286,15 +125,6 @@ const writeViewed = (root: string, viewed: Record<string, string>) => {
 };
 
 const getItemId = (section: DiffSection) => `diff:${section.id}`;
-
-const getItemVersion = (value: string) => {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return hash >>> 0;
-};
 
 type CodeViewItemMetadata = {
   file: ChangedFile;
@@ -364,10 +194,12 @@ const parseSectionDiff = (file: ChangedFile, section: DiffSection): FileDiffMeta
 
 function Sidebar({
   files,
+  onActivatePath,
   onSelectPath,
   selectedPath,
 }: {
   files: ReadonlyArray<ChangedFile>;
+  onActivatePath: (path: string) => void;
   onSelectPath: (path: string) => void;
   selectedPath: string | null;
 }) {
@@ -376,6 +208,7 @@ function Sidebar({
   const treeHostRef = useRef<HTMLDivElement>(null);
   const suppressSelectionChange = useRef(false);
   const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const filePathSet = useMemo(() => new Set(paths), [paths]);
   const status = useMemo(
     () =>
       files.map((file) => ({
@@ -442,25 +275,21 @@ function Sidebar({
     [model],
   );
 
-  const allowNextSelectionScroll = useCallback(() => {
-    allowSelectionScroll.current = true;
-    if (allowSelectionScrollTimer.current != null) {
-      window.clearTimeout(allowSelectionScrollTimer.current);
-    }
+  const handleTreeClick = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      for (const target of event.nativeEvent.composedPath()) {
+        if (!('getAttribute' in target) || typeof target.getAttribute !== 'function') {
+          continue;
+        }
 
-    allowSelectionScrollTimer.current = window.setTimeout(() => {
-      allowSelectionScroll.current = false;
-      allowSelectionScrollTimer.current = null;
-    }, 500);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (allowSelectionScrollTimer.current != null) {
-        window.clearTimeout(allowSelectionScrollTimer.current);
+        const path = target.getAttribute('data-item-path');
+        if (path && filePathSet.has(path)) {
+          onActivatePath(path);
+          return;
+        }
       }
     },
-    [],
+    [filePathSet, onActivatePath],
   );
 
   useEffect(() => {
@@ -485,12 +314,8 @@ function Sidebar({
   }, [model, scrollPathIntoView, selectedPath]);
 
   return (
-    <div
-      className="file-tree-shell"
-      onPointerDownCapture={allowNextSelectionScroll}
-      ref={treeHostRef}
-    >
-      <FileTree className="file-tree" model={model} />
+    <div className="file-tree-shell" ref={treeHostRef}>
+      <FileTree className="file-tree" model={model} onClick={handleTreeClick} />
     </div>
   );
 }
@@ -508,7 +333,9 @@ function CodeViewHeader({
 
   return (
     <div
-      className={`codiff-file-header${isSelected ? ' selected' : ''}${isViewed ? ' viewed' : ''}`}
+      className={`codiff-file-header${isCollapsed ? ' collapsed' : ''}${
+        isSelected ? ' selected' : ''
+      }${isViewed ? ' viewed' : ''}`}
     >
       <button
         aria-label={isCollapsed ? 'Expand file' : 'Collapse file'}
@@ -543,6 +370,7 @@ function CodeViewHeader({
 function ReviewCodeView({
   collapsed,
   files,
+  itemVersionByPath,
   onSelectPathFromScroll,
   onToggleCollapsed,
   onToggleViewed,
@@ -552,6 +380,7 @@ function ReviewCodeView({
 }: {
   collapsed: ReadonlySet<string>;
   files: ReadonlyArray<ChangedFile>;
+  itemVersionByPath: Readonly<Record<string, number>>;
   onSelectPathFromScroll: (viewer: CodeViewInstance) => void;
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean) => void;
   onToggleViewed: (file: ChangedFile, isViewed: boolean) => void;
@@ -560,7 +389,7 @@ function ReviewCodeView({
   viewed: Record<string, string>;
 }) {
   const codeViewRef = useRef<CodeViewHandle<undefined>>(null);
-  const handledScrollRequest = useRef<number | null>(null);
+  const handledScrollRequestRef = useRef<number | null>(null);
 
   const { firstItemByPath, itemMetadata, items } = useMemo(() => {
     const nextItems: Array<CodeViewItem> = [];
@@ -569,10 +398,10 @@ function ReviewCodeView({
 
     for (const file of files) {
       const isViewed = viewed[file.path] === file.fingerprint;
-      const isCollapsed = collapsed.has(file.path) || isViewed;
+      const isCollapsed = collapsed.has(file.path);
       const sections = isCollapsed ? file.sections.slice(0, 1) : file.sections;
 
-      for (const [index, section] of sections.entries()) {
+      for (const section of sections) {
         const id = getItemId(section);
         nextItemMetadata.set(id, {
           file,
@@ -588,11 +417,7 @@ function ReviewCodeView({
           fileDiff: parseSectionDiff(file, section),
           id,
           type: 'diff',
-          version: getItemVersion(
-            `${file.fingerprint}:${section.id}:${isCollapsed ? 'collapsed' : 'open'}:${
-              isViewed ? 'viewed' : 'pending'
-            }:${index}:${selectedPath === file.path ? 'selected' : 'idle'}`,
-          ),
+          version: itemVersionByPath[file.path] ?? 0,
         });
       }
     }
@@ -602,12 +427,11 @@ function ReviewCodeView({
       itemMetadata: nextItemMetadata,
       items: nextItems,
     };
-  }, [collapsed, files, selectedPath, viewed]);
+  }, [collapsed, files, itemVersionByPath, selectedPath, viewed]);
 
-  const codeViewOptions = useMemo(
+  const codeViewOptions: CodeViewOptions<undefined> = useMemo(
     () =>
       ({
-        __devOnlyValidateItemHeights: true,
         diffIndicators: 'bars',
         diffStyle: 'split',
         enableLineSelection: true,
@@ -641,25 +465,58 @@ function ReviewCodeView({
     [],
   );
 
-  useEffect(() => {
-    if (!scrollTarget) {
-      return;
+  const scrollItemHeaderIntoView = useCallback((itemId: string) => {
+    const handle = codeViewRef.current;
+    const viewer = handle?.getInstance();
+    if (!handle || !viewer || viewer.getTopForItem(itemId) == null) {
+      return false;
     }
-    if (handledScrollRequest.current === scrollTarget.request) {
+
+    handle.scrollTo({
+      behavior: 'instant',
+      id: itemId,
+      offset: DEFAULT_PADDING,
+      type: 'item',
+    });
+
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!scrollTarget || handledScrollRequestRef.current === scrollTarget.request) {
       return;
     }
 
-    const itemId = firstItemByPath.get(scrollTarget.path);
-    if (itemId) {
-      handledScrollRequest.current = scrollTarget.request;
-      codeViewRef.current?.scrollTo({
-        align: 'start',
-        behavior: 'smooth-auto',
-        id: itemId,
-        type: 'item',
-      });
-    }
-  }, [firstItemByPath, scrollTarget]);
+    let frame: number | null = null;
+    let attempts = 0;
+    let canceled = false;
+
+    const tryScroll = () => {
+      if (canceled || handledScrollRequestRef.current === scrollTarget.request) {
+        return;
+      }
+
+      const itemId = firstItemByPath.get(scrollTarget.path);
+      if (itemId && scrollItemHeaderIntoView(itemId)) {
+        handledScrollRequestRef.current = scrollTarget.request;
+        return;
+      }
+
+      if (attempts < 6) {
+        attempts += 1;
+        frame = window.requestAnimationFrame(tryScroll);
+      }
+    };
+
+    tryScroll();
+
+    return () => {
+      canceled = true;
+      if (frame != null) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [firstItemByPath, scrollItemHeaderIntoView, scrollTarget]);
 
   const renderCustomHeader = useCallback(
     (item: CodeViewItem) => {
@@ -702,6 +559,7 @@ function ReviewCodeView({
 export default function App() {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [itemVersionByPath, setItemVersionByPath] = useState<Record<string, number>>({});
   const [scrollTarget, setScrollTarget] = useState<{ path: string; request: number } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [state, setState] = useState<RepositoryState | null>(null);
@@ -719,9 +577,19 @@ export default function App() {
           return;
         }
 
+        const nextViewed = readViewed(nextState.root);
+
         setState(nextState);
         setError(null);
-        setViewed(readViewed(nextState.root));
+        setCollapsed(
+          new Set(
+            nextState.files
+              .filter((file) => nextViewed[file.path] === file.fingerprint)
+              .map((file) => file.path),
+          ),
+        );
+        setItemVersionByPath({});
+        setViewed(nextViewed);
         setSelectedPath((current) => current ?? nextState.files[0]?.path ?? null);
       })
       .catch((error: unknown) => {
@@ -746,6 +614,10 @@ export default function App() {
 
   const selectPath = useCallback((path: string) => {
     setSelectedPath(path);
+  }, []);
+
+  const activatePath = useCallback((path: string) => {
+    setSelectedPath(path);
     setScrollTarget((current) => ({
       path,
       request: (current?.request ?? 0) + 1,
@@ -761,17 +633,28 @@ export default function App() {
     }, 1200);
   }, []);
 
-  const toggleCollapsed = useCallback((file: ChangedFile, isCollapsed: boolean) => {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (isCollapsed) {
-        next.delete(file.path);
-      } else {
-        next.add(file.path);
-      }
-      return next;
-    });
+  const bumpItemVersion = useCallback((path: string) => {
+    setItemVersionByPath((current) => ({
+      ...current,
+      [path]: (current[path] ?? 0) + 1,
+    }));
   }, []);
+
+  const toggleCollapsed = useCallback(
+    (file: ChangedFile, isCollapsed: boolean) => {
+      setCollapsed((current) => {
+        const next = new Set(current);
+        if (isCollapsed) {
+          next.delete(file.path);
+        } else {
+          next.add(file.path);
+        }
+        return next;
+      });
+      bumpItemVersion(file.path);
+    },
+    [bumpItemVersion],
+  );
 
   const updateSelectedPathFromScroll = useCallback(
     (viewer: CodeViewInstance) => {
@@ -780,7 +663,7 @@ export default function App() {
       }
 
       const scrollTop = viewer.getScrollTop();
-      const activationTop = scrollTop + scrollSelectionActivationOffset;
+      const activationTop = scrollTop + DEFAULT_PADDING;
       let nextPath = state.files[0]?.path ?? null;
       let nextDistance = Number.NEGATIVE_INFINITY;
 
@@ -841,16 +724,19 @@ export default function App() {
       });
 
       setCollapsed((current) => {
-        const next = new Set(current);
         if (isViewed) {
+          const next = new Set(current);
           next.delete(file.path);
-        } else {
-          next.add(file.path);
+          return next;
         }
+
+        const next = new Set(current);
+        next.add(file.path);
         return next;
       });
+      bumpItemVersion(file.path);
     },
-    [state],
+    [bumpItemVersion, state],
   );
 
   if (error) {
@@ -879,7 +765,12 @@ export default function App() {
           </div>
           <div className="sidebar-title">Changed Files</div>
         </div>
-        <Sidebar files={state.files} onSelectPath={selectPath} selectedPath={selectedPath} />
+        <Sidebar
+          files={state.files}
+          onActivatePath={activatePath}
+          onSelectPath={selectPath}
+          selectedPath={selectedPath}
+        />
       </aside>
       <main className="review">
         {state.files.length === 0 ? (
@@ -893,6 +784,7 @@ export default function App() {
           <ReviewCodeView
             collapsed={collapsed}
             files={state.files}
+            itemVersionByPath={itemVersionByPath}
             onSelectPathFromScroll={updateSelectedPathFromScroll}
             onToggleCollapsed={toggleCollapsed}
             onToggleViewed={toggleViewed}

@@ -34,6 +34,7 @@
     --sidebar-text: rgb(17 17 17 / 0.76);
     --text: #111111;
     --viewed: rgb(31 122 68);
+    color-scheme: light;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -48,6 +49,7 @@
       --sidebar-text: rgb(230 230 230 / 0.78);
       --text: rgb(230 230 230);
       --viewed: rgb(111 208 148);
+      color-scheme: dark;
     }
   }
 
@@ -149,7 +151,6 @@
 .review {
   min-height: 0;
   overflow: hidden;
-  padding: 10px 10px 22px;
 }
 
 .code-view {
@@ -163,11 +164,11 @@
   overscroll-behavior: contain;
   will-change: scroll-position;
   width: 100%;
+  padding-inline: 10px;
 }
 
 .code-view diffs-container {
   background: var(--code-bg);
-  border: 0;
   border-radius: 28px;
   box-shadow:
     0 0 0 1px var(--file-border),
@@ -178,15 +179,6 @@
   overflow: hidden;
 }
 
-.code-view diffs-container:first-child {
-  margin-top: 0;
-}
-
-.code-view [slot='header-custom'] {
-  display: block;
-  min-width: 0;
-}
-
 .codiff-file-header {
   align-items: center;
   background: var(--file-bg);
@@ -195,7 +187,7 @@
   display: grid;
   gap: 10px;
   grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
-  min-height: 54px;
+  height: 54px;
   padding: 9px 10px;
 }
 
@@ -203,6 +195,18 @@
   box-shadow:
     inset 0 -1px 0 var(--file-border),
     inset 0 0 0 1px rgb(61 135 245 / 0.52);
+  corner-shape: squircle;
+  border-radius: 28px 28px 0 0;
+}
+
+.codiff-file-header.collapsed {
+  border-radius: 28px;
+  box-shadow: none;
+  corner-shape: squircle;
+}
+
+.codiff-file-header.collapsed.selected {
+  box-shadow: inset 0 0 0 1px rgb(61 135 245 / 0.52);
 }
 
 .codiff-file-header.viewed .codiff-file-path {
