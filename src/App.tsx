@@ -332,6 +332,7 @@ function Sidebar({
 }) {
   const allowSelectionScroll = useRef(false);
   const allowSelectionScrollTimer = useRef<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const treeHostRef = useRef<HTMLDivElement>(null);
   const suppressSelectionChange = useRef(false);
   const paths = useMemo(() => files.map((file) => file.path), [files]);
@@ -435,6 +436,19 @@ function Sidebar({
   );
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!selectedPath) {
       return;
     }
@@ -469,6 +483,7 @@ function Sidebar({
             }
           }}
           placeholder="Filter files"
+          ref={searchInputRef}
           spellCheck={false}
           type="search"
           value={searchQuery}
