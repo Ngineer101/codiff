@@ -24,6 +24,7 @@ const {
 const squirrelStartup = require('electron-squirrel-startup');
 const {
   listRepositoryHistory,
+  readDiffSectionContent,
   readRepositoryChangeSignature,
   readRepositoryState,
 } = require('./git-state.cjs');
@@ -280,7 +281,7 @@ const createWindow = (repositoryPath) => {
     show: false,
     title: `Codiff - ${repositoryPath}`,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 18, y: 18 },
+    trafficLightPosition: { x: 25, y: 24 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -349,6 +350,11 @@ ipcMain.handle('codiff:getRepositoryState', async (event, source) => {
   const state = await readRepositoryState(repositoryPath, source);
   await resetRepositoryWatcher(event.sender.id, repositoryPath);
   return state;
+});
+
+ipcMain.handle('codiff:getDiffSectionContent', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return readDiffSectionContent(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:getRepositoryHistory', async (event, limit) => {

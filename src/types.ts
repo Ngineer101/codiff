@@ -2,6 +2,7 @@ export type DiffSection = {
   binary: boolean;
   id: string;
   kind: 'commit' | 'staged' | 'unstaged';
+  loadState?: 'binary' | 'deferred' | 'directory' | 'error' | 'ready' | 'too-large';
   newFile?: {
     cacheKey?: string;
     contents: string;
@@ -13,6 +14,13 @@ export type DiffSection = {
     name: string;
   };
   patch: string;
+  summary?: {
+    canLoad?: boolean;
+    fileCount?: number;
+    limit?: number;
+    reason: string;
+    size?: number;
+  };
 };
 
 export type GitFileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'untracked';
@@ -52,6 +60,13 @@ export type RepositoryState = {
   launchPath: string;
   root: string;
   source: ReviewSource;
+};
+
+export type DiffSectionContentRequest = {
+  force?: boolean;
+  kind: DiffSection['kind'];
+  path: string;
+  source?: ReviewSource;
 };
 
 export type CodiffPreferences = {

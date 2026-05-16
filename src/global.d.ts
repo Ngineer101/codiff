@@ -1,5 +1,7 @@
 import type {
   CodiffPreferences,
+  DiffSection,
+  DiffSectionContentRequest,
   RepositoryHistory,
   RepositoryState,
   ReviewSource,
@@ -8,6 +10,7 @@ import type {
 declare global {
   interface Window {
     codiff: {
+      getDiffSectionContent: (request: DiffSectionContentRequest) => Promise<DiffSection>;
       getPreferences: () => Promise<CodiffPreferences>;
       getRepositoryHistory: (limit?: number) => Promise<RepositoryHistory>;
       getRepositoryState: (source?: ReviewSource) => Promise<RepositoryState>;

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('codiff', {
+  getDiffSectionContent: (request) => ipcRenderer.invoke('codiff:getDiffSectionContent', request),
   getPreferences: () => ipcRenderer.invoke('codiff:getPreferences'),
   getRepositoryHistory: (limit) => ipcRenderer.invoke('codiff:getRepositoryHistory', limit),
   getRepositoryState: (source) => ipcRenderer.invoke('codiff:getRepositoryState', source),

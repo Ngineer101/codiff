@@ -162,7 +162,8 @@
   display: flex;
   min-height: 42px;
   min-width: 0;
-  padding-left: 70px;
+  padding-top: 10px;
+  padding-left: 72px;
 }
 
 .sidebar-path {

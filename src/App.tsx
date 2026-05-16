@@ -223,8 +223,10 @@ type CodeViewItemMetadata = {
 };
 
 const createBinaryFileDiff = (file: ChangedFile, section: DiffSection): FileDiffMetadata => ({
-  additionLines: ['Binary file changed\n'],
-  cacheKey: `binary:${file.fingerprint}:${section.id}`,
+  additionLines: [`${section.summary?.reason ?? 'Binary file changed.'}\n`],
+  cacheKey: `summary:${file.fingerprint}:${section.id}:${section.loadState ?? 'binary'}:${
+    section.summary?.reason ?? ''
+  }`,
   deletionLines: [],
   hunks: [
     {
@@ -278,19 +280,30 @@ const createEmptyFileDiff = (file: ChangedFile, section: DiffSection): FileDiffM
 
 const parsedDiffCache = new Map<string, FileDiffMetadata>();
 
+const getSectionCacheIdentity = (section: DiffSection) =>
+  [
+    section.loadState ?? 'ready',
+    section.summary?.reason ?? '',
+    section.oldFile?.cacheKey ?? '',
+    section.newFile?.cacheKey ?? '',
+    section.patch.length,
+  ].join(':');
+
 const parseSectionDiffWithOptions = (
   file: ChangedFile,
   section: DiffSection,
   showWhitespace: boolean,
 ): FileDiffMetadata => {
-  const cacheKey = `${file.fingerprint}:${section.id}:${showWhitespace ? 'ws' : 'ignore-ws'}`;
+  const cacheKey = `${file.fingerprint}:${section.id}:${getSectionCacheIdentity(section)}:${
+    showWhitespace ? 'ws' : 'ignore-ws'
+  }`;
   const cached = parsedDiffCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   let fileDiff: FileDiffMetadata;
-  if (section.binary) {
+  if (section.binary || (section.loadState != null && section.loadState !== 'ready')) {
     fileDiff = createBinaryFileDiff(file, section);
   } else if (section.oldFile && section.newFile) {
     try {
@@ -324,7 +337,11 @@ const sectionHasVisibleDiff = (
   file: ChangedFile,
   section: DiffSection,
   fileDiff: FileDiffMetadata,
-) => section.binary || fileHasMetadataDiff(file) || fileDiff.hunks.length > 0;
+) =>
+  section.binary ||
+  (section.loadState != null && section.loadState !== 'ready') ||
+  fileHasMetadataDiff(file) ||
+  fileDiff.hunks.length > 0;
 
 export const getVisibleDiffSections = (file: ChangedFile, showWhitespace: boolean) =>
   file.sections
@@ -791,8 +808,16 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [state, setState] = useState<RepositoryState | null>(null);
   const [viewed, setViewed] = useState<Record<string, string>>({});
+  const loadingSectionKeysRef = useRef<Set<string>>(new Set());
   const programmaticScrollPathRef = useRef<string | null>(null);
   const programmaticScrollTimerRef = useRef<number | null>(null);
+
+  const bumpItemVersion = useCallback((path: string) => {
+    setItemVersionByPath((current) => ({
+      ...current,
+      [path]: (current[path] ?? 0) + 1,
+    }));
+  }, []);
 
   useEffect(() => {
     let canceled = false;
@@ -841,6 +866,109 @@ export default function App() {
       }),
     [],
   );
+
+  useEffect(() => {
+    if (!state || state.source.type !== 'working-tree' || !selectedPath) {
+      return;
+    }
+
+    const selectedFile = state.files.find((file) => file.path === selectedPath);
+    if (!selectedFile) {
+      return;
+    }
+
+    const deferredSections = selectedFile.sections.filter(
+      (section) => section.loadState === 'deferred' && section.summary?.canLoad !== false,
+    );
+
+    if (!deferredSections.length) {
+      return;
+    }
+
+    let canceled = false;
+
+    for (const section of deferredSections) {
+      const key = `${state.root}:${section.id}`;
+      if (loadingSectionKeysRef.current.has(key)) {
+        continue;
+      }
+
+      loadingSectionKeysRef.current.add(key);
+      window.codiff
+        .getDiffSectionContent({
+          force: true,
+          kind: section.kind,
+          path: selectedFile.path,
+          source: state.source,
+        })
+        .then((loadedSection) => {
+          if (canceled) {
+            return;
+          }
+
+          setState((current) => {
+            if (!current || current.root !== state.root) {
+              return current;
+            }
+
+            return {
+              ...current,
+              files: current.files.map((file) =>
+                file.path === selectedFile.path
+                  ? {
+                      ...file,
+                      sections: file.sections.map((candidate) =>
+                        candidate.id === section.id ? loadedSection : candidate,
+                      ),
+                    }
+                  : file,
+              ),
+            };
+          });
+          bumpItemVersion(selectedFile.path);
+        })
+        .catch(() => {
+          if (!canceled) {
+            setState((current) => {
+              if (!current || current.root !== state.root) {
+                return current;
+              }
+
+              return {
+                ...current,
+                files: current.files.map((file) =>
+                  file.path === selectedFile.path
+                    ? {
+                        ...file,
+                        sections: file.sections.map((candidate) =>
+                          candidate.id === section.id
+                            ? {
+                                ...candidate,
+                                loadState: 'error',
+                                summary: {
+                                  canLoad: false,
+                                  reason: 'Codiff could not load this file.',
+                                },
+                              }
+                            : candidate,
+                        ),
+                      }
+                    : file,
+                ),
+              };
+            });
+            bumpItemVersion(selectedFile.path);
+          }
+        })
+        .finally(() => {
+          loadingSectionKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      canceled = true;
+    };
+  }, [bumpItemVersion, selectedPath, state]);
 
   useEffect(() => {
     let canceled = false;
@@ -901,13 +1029,6 @@ export default function App() {
       programmaticScrollPathRef.current = null;
       programmaticScrollTimerRef.current = null;
     }, 1200);
-  }, []);
-
-  const bumpItemVersion = useCallback((path: string) => {
-    setItemVersionByPath((current) => ({
-      ...current,
-      [path]: (current[path] ?? 0) + 1,
-    }));
   }, []);
 
   const toggleCollapsed = useCallback(

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vite-plus/test';
-import type { RepositoryState } from './types.ts';
+import type { DiffSection, DiffSectionContentRequest, RepositoryState } from './types.ts';
 
 type StatusEntry = {
   oldPath?: string;
@@ -18,6 +18,10 @@ type StatusEntry = {
 
 type GitStateModule = {
   parseStatus: (raw: string) => Array<StatusEntry>;
+  readDiffSectionContent: (
+    launchPath: string,
+    request: DiffSectionContentRequest,
+  ) => Promise<DiffSection>;
   readRepositoryChangeSignature: (
     launchPath: string,
   ) => Promise<{ root: string; signature: string }>;
@@ -27,8 +31,13 @@ type GitStateModule = {
 
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
-const { parseStatus, readRepositoryChangeSignature, readRepositoryState, readWorkingTreeState } =
-  require('../electron/git-state.cjs') as GitStateModule;
+const {
+  parseStatus,
+  readDiffSectionContent,
+  readRepositoryChangeSignature,
+  readRepositoryState,
+  readWorkingTreeState,
+} = require('../electron/git-state.cjs') as GitStateModule;
 
 const git = async (repo: string, args: ReadonlyArray<string>) => {
   const { stdout } = await execFileAsync('git', ['-C', repo, ...args], {
@@ -185,6 +194,74 @@ test('readWorkingTreeState reports untracked text and binary files', async () =>
     expect(binaryFile?.sections[0].kind).toBe('unstaged');
     expect(binaryFile?.sections[0].binary).toBe(true);
     expect(binaryFile?.sections[0].newFile).toBeUndefined();
+  });
+});
+
+test('readWorkingTreeState defers large untracked text files and loads them on demand', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'tracked.txt', 'tracked\n');
+    await commitAll(repo, 'initial commit');
+    const contents = `${'large line\n'.repeat(30_000)}end\n`;
+    await writeRepoFile(repo, 'large.txt', contents);
+
+    const state = await readWorkingTreeState(repo);
+    const file = state.files.find((candidate) => candidate.path === 'large.txt');
+    const section = file?.sections[0];
+
+    expect(file?.status).toBe('untracked');
+    expect(section?.loadState).toBe('deferred');
+    expect(section?.newFile).toBeUndefined();
+    expect(section?.patch).toBe('');
+
+    const loadedSection = await readDiffSectionContent(repo, {
+      force: true,
+      kind: 'unstaged',
+      path: 'large.txt',
+    });
+
+    expect(loadedSection.loadState).toBe('ready');
+    expect(loadedSection.newFile?.contents).toBe(contents);
+    expect(loadedSection.patch).toContain('new file mode');
+  });
+});
+
+test('readWorkingTreeState summarizes extremely large untracked files', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'tracked.txt', 'tracked\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'huge.txt', 'x'.repeat(2 * 1024 * 1024 + 1));
+
+    const state = await readWorkingTreeState(repo);
+    const section = state.files.find((file) => file.path === 'huge.txt')?.sections[0];
+
+    expect(section?.loadState).toBe('too-large');
+    expect(section?.summary?.canLoad).toBe(false);
+    expect(section?.newFile).toBeUndefined();
+    expect(section?.patch).toBe('');
+  });
+});
+
+test('readWorkingTreeState collapses generated untracked directories', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'tracked.txt', 'tracked\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'node_modules/pkg/index.js', 'module.exports = 1;\n');
+    await writeRepoFile(repo, 'packages/app/node_modules/pkg/index.js', 'module.exports = 2;\n');
+    await writeRepoFile(repo, 'src/new.ts', 'export const value = 1;\n');
+
+    const state = await readWorkingTreeState(repo);
+    const paths = state.files.map((file) => file.path);
+    const nodeModules = state.files.find((file) => file.path === 'node_modules');
+    const nestedNodeModules = state.files.find((file) => file.path === 'packages/app/node_modules');
+    const sourceFile = state.files.find((file) => file.path === 'src/new.ts');
+
+    expect(paths).not.toContain('node_modules/pkg/index.js');
+    expect(paths).not.toContain('packages/app/node_modules/pkg/index.js');
+    expect(nodeModules?.status).toBe('untracked');
+    expect(nodeModules?.sections[0].loadState).toBe('directory');
+    expect(nestedNodeModules?.sections[0].loadState).toBe('directory');
+    expect(sourceFile?.sections[0].loadState).toBe('ready');
+    expect(sourceFile?.sections[0].newFile?.contents).toBe('export const value = 1;\n');
   });
 });
 
