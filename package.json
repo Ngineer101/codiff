@@ -28,7 +28,7 @@
     "test": "vp test"
   },
   "dependencies": {
-    "@pierre/diffs": "1.2.0-beta.5",
+    "@pierre/diffs": "1.2.0-beta.6",
     "@pierre/trees": "1.0.0-beta.3",
     "electron": "^42.0.1",
     "react": "^19.2.6",
@@ -65,5 +65,16 @@
     "node": ">=23.0.0",
     "pnpm": ">=11.0.0"
   },
-  "packageManager": "pnpm@11.0.6"
+  "packageManager": "pnpm@11.0.6",
+  "workspaces": {
+    "catalog": {
+      "vite": "npm:@voidzero-dev/vite-plus-core@^0.1.21",
+      "vite-plus": "^0.1.21",
+      "vitest": "npm:@voidzero-dev/vite-plus-test@^0.1.21"
+    }
+  },
+  "overrides": {
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
 }
