@@ -370,7 +370,7 @@
   overscroll-behavior: contain;
   will-change: scroll-position;
   width: 100%;
-  padding-inline: 10px;
+  padding-inline: 12px;
 }
 
 .code-view diffs-container {
@@ -378,7 +378,7 @@
   border-radius: 28px;
   box-shadow:
     0 0 0 1px var(--file-border),
-    0 18px 80px -54px rgb(0 0 0 / 0.8);
+    6px 18px 80px -54px rgb(0 0 0 / 0.78);
   contain: layout paint style;
   corner-shape: squircle;
   display: block;
@@ -560,9 +560,256 @@
   height: 7px;
   left: 4px;
   position: absolute;
-  top: 1px;
+  top: 2px;
   transform: rotate(45deg);
   width: 4px;
+}
+
+.review-comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 12px;
+}
+
+.review-comment {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.review-comment-avatar {
+  align-self: start;
+  background: rgb(127 127 127 / 0.14);
+  border: 1px solid var(--file-border);
+  border-radius: 8px;
+  color: var(--muted);
+  corner-shape: squircle;
+  display: inline-flex;
+  flex: none;
+  font: 700 12px/1 var(--font-sans);
+  height: 34px;
+  justify-content: center;
+  object-fit: cover;
+  width: 34px;
+}
+
+.review-comment-avatar.fallback {
+  align-items: center;
+}
+
+.review-comment-body {
+  background: var(--file-bg);
+  border: 1px solid var(--file-border);
+  border-radius: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.review-comment-header {
+  align-items: center;
+  border-bottom: 1px solid var(--file-border);
+  color: var(--muted);
+  display: grid;
+  font: 12px/1.3 var(--font-sans);
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) 26px;
+  min-height: 34px;
+  padding: 4px 4px 4px 10px;
+}
+
+.review-comment-header strong {
+  color: var(--text);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-comment-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-comment-delete {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  corner-shape: squircle;
+  cursor: pointer;
+  display: inline-flex;
+  height: 26px;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  width: 26px;
+}
+
+.review-comment-delete:hover {
+  background: rgb(127 127 127 / 0.12);
+  color: var(--text);
+}
+
+.review-comment-delete-icon,
+.review-comment-delete-icon::before,
+.review-comment-delete-icon::after {
+  content: '';
+  position: absolute;
+}
+
+.review-comment-delete-icon {
+  display: block;
+  height: 12px;
+  position: relative;
+  width: 12px;
+}
+
+.review-comment-delete-icon::before,
+.review-comment-delete-icon::after {
+  background: currentColor;
+  border-radius: 1px;
+  height: 2px;
+  left: 0;
+  top: 5px;
+  width: 12px;
+}
+
+.review-comment-delete-icon::before {
+  transform: rotate(45deg);
+}
+
+.review-comment-delete-icon::after {
+  transform: rotate(-45deg);
+}
+
+.review-comment-input {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  display: block;
+  field-sizing: content;
+  font: 13px/1.45 var(--font-sans);
+  min-height: 76px;
+  outline: none;
+  overflow-y: hidden;
+  padding: 9px 10px 10px;
+  resize: none;
+  width: 100%;
+}
+
+.review-comment-input::placeholder {
+  color: var(--muted);
+}
+
+.copy-comments-button {
+  -webkit-app-region: no-drag;
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  align-items: center;
+  backdrop-filter: blur(22px) saturate(1.35);
+  background: color-mix(in srgb, var(--code-bg) 78%, transparent);
+  border: 1px solid var(--file-border);
+  border-radius: 50%;
+  bottom: 22px;
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.16) inset,
+    0 0 0 1px var(--file-border),
+    0 18px 80px -54px rgb(0 0 0 / 0.8),
+    0 16px 46px -30px rgb(0 0 0 / 0.72),
+    0 12px 24px -18px rgb(0 0 0 / 0.9);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  height: 46px;
+  justify-content: center;
+  padding: 0;
+  position: fixed;
+  right: 22px;
+  transition: all 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform: scale(1);
+  width: 46px;
+  z-index: 12;
+}
+
+.copy-comments-button:hover {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.2) inset,
+    0 0 0 1px var(--file-border),
+    0 26px 96px -48px rgb(0 0 0 / 0.92),
+    0 22px 62px -30px rgb(0 0 0 / 0.82),
+    0 16px 32px -18px rgb(0 0 0 / 0.96);
+  transform: scale(1.05);
+}
+
+.copy-comments-button:active {
+  transform: scale(0.95);
+}
+
+.copy-comments-button.copied {
+  background: color-mix(in srgb, var(--code-bg) 80%, var(--viewed) 14%);
+  color: var(--viewed);
+}
+
+.copy-comments-icon {
+  display: block;
+  height: 20px;
+  position: relative;
+  transform: translate(1px, 0);
+  width: 20px;
+}
+
+.copy-comments-icon::before,
+.copy-comments-icon::after {
+  background: transparent;
+  border: 1.75px solid currentColor;
+  border-radius: 5px;
+  box-shadow:
+    0 8px 18px -13px rgb(0 0 0 / 0.72),
+    0 1px 0 rgb(255 255 255 / 0.18) inset;
+  content: '';
+  height: 14px;
+  position: absolute;
+  width: 12px;
+}
+
+.copy-comments-icon::before {
+  left: 2px;
+  top: 5px;
+  opacity: 0.54;
+}
+
+.copy-comments-icon::after {
+  left: 6px;
+  top: 1px;
+}
+
+.copy-comments-icon.check {
+  height: 20px;
+  transform: translate(0, -1px);
+  width: 20px;
+}
+
+.copy-comments-icon.check::before {
+  background: transparent;
+  border-color: currentColor;
+  border-left: 0;
+  border-radius: 1px;
+  border-top: 0;
+  box-shadow: none;
+  display: block;
+  height: 15px;
+  left: 6px;
+  opacity: 1;
+  top: 1px;
+  transform: rotate(45deg);
+  width: 8px;
+}
+
+.copy-comments-icon.check::after {
+  display: none;
 }
 
 .loading,

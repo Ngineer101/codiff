@@ -1,5 +1,11 @@
 import { expect, test } from 'vite-plus/test';
-import { fileHasVisibleDiff, getDiffSearchResult, getVisibleDiffSections } from './App.tsx';
+import {
+  buildReviewCommentsMarkdown,
+  fileHasVisibleDiff,
+  getDiffSearchResult,
+  getVisibleDiffSections,
+  isDiffSearchShortcut,
+} from './App.tsx';
 import type { ChangedFile } from './types.ts';
 
 test('pure renames are visible without content hunks', () => {
@@ -97,4 +103,72 @@ test('diff search includes file path matches', () => {
     filePath: 'src/needle.ts',
     itemId: 'diff:src/needle.ts:unstaged',
   });
+});
+
+test('diff search shortcut does not claim fullscreen shortcut', () => {
+  const baseEvent = {
+    altKey: false,
+    key: 'f',
+    metaKey: false,
+    shiftKey: false,
+  };
+
+  expect(isDiffSearchShortcut({ ...baseEvent, ctrlKey: false, metaKey: true }, 'MacIntel')).toBe(
+    true,
+  );
+  expect(isDiffSearchShortcut({ ...baseEvent, ctrlKey: true, metaKey: true }, 'MacIntel')).toBe(
+    false,
+  );
+  expect(isDiffSearchShortcut({ ...baseEvent, ctrlKey: true }, 'Win32')).toBe(true);
+  expect(isDiffSearchShortcut({ ...baseEvent, ctrlKey: false, metaKey: true }, 'Win32')).toBe(
+    false,
+  );
+});
+
+test('review comment markdown includes file and patch context', () => {
+  const file = {
+    fingerprint: 'comment-export',
+    path: 'src/comment.ts',
+    sections: [
+      {
+        binary: false,
+        id: 'src/comment.ts:unstaged',
+        kind: 'unstaged',
+        newFile: {
+          contents: 'const label = "alpha";\nconst value = "needle";\n',
+          name: 'src/comment.ts',
+        },
+        oldFile: {
+          contents: 'const label = "alpha";\nconst value = "hay";\n',
+          name: 'src/comment.ts',
+        },
+        patch: '',
+      },
+    ],
+    status: 'modified',
+  } satisfies ChangedFile;
+
+  const markdown = buildReviewCommentsMarkdown(
+    [file],
+    [
+      {
+        body: 'Please double-check this value.',
+        filePath: 'src/comment.ts',
+        id: 'comment-1',
+        lineNumber: 2,
+        sectionId: 'src/comment.ts:unstaged',
+        side: 'additions',
+      },
+    ],
+    false,
+  );
+
+  expect(markdown).toContain('# Address these Review Comments');
+  expect(markdown).toContain('1. **src/comment.ts** (additions line 2)');
+  expect(markdown).toContain('Please double-check this value.');
+  expect(markdown).toContain('```diff');
+  expect(markdown).toContain('+   2 | const value = "needle";');
+  expect(markdown.indexOf('```diff')).toBeLessThan(
+    markdown.indexOf('Please double-check this value.'),
+  );
 });

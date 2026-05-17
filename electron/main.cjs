@@ -24,6 +24,7 @@ const {
 const squirrelStartup = require('electron-squirrel-startup');
 const {
   listRepositoryHistory,
+  readGitIdentity,
   readDiffSectionContent,
   readRepositoryChangeSignature,
   readRepositoryState,
@@ -267,6 +268,7 @@ const buildApplicationMenu = () =>
           type: 'checkbox',
         },
         { type: 'separator' },
+        { role: 'togglefullscreen' },
         { role: 'reload' },
         {
           accelerator: 'CommandOrControl+Alt+J',
@@ -369,6 +371,11 @@ ipcMain.handle('codiff:getDiffSectionContent', async (event, request) => {
 ipcMain.handle('codiff:getRepositoryHistory', async (event, limit) => {
   const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
   return listRepositoryHistory(repositoryPath, limit);
+});
+
+ipcMain.handle('codiff:getGitIdentity', async (event) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return readGitIdentity(repositoryPath);
 });
 
 ipcMain.handle('codiff:getPreferences', () => preferences);

@@ -8,6 +8,9 @@ const execFileAsync = promisify(execFile);
 
 const getFingerprint = (value) => createHash('sha256').update(value).digest('hex').slice(0, 16);
 
+const getGravatarHash = (email) =>
+  createHash('md5').update(email.trim().toLowerCase()).digest('hex');
+
 const git = async (repoPath, args, options = {}) => {
   const { stdout } = await execFileAsync('git', ['-C', repoPath, ...args], {
     encoding: options.encoding || 'utf8',
@@ -737,6 +740,23 @@ const gitOrEmpty = async (repoRoot, args) => {
   }
 };
 
+const readGitIdentity = async (launchPath) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const [name, email] = await Promise.all([
+    gitOrEmpty(repoRoot, ['config', '--get', 'user.name']),
+    gitOrEmpty(repoRoot, ['config', '--get', 'user.email']),
+  ]);
+  const trimmedEmail = email.trim();
+
+  return {
+    email: trimmedEmail,
+    gravatarUrl: trimmedEmail
+      ? `https://www.gravatar.com/avatar/${getGravatarHash(trimmedEmail)}?s=80&d=identicon`
+      : undefined,
+    name: name.trim(),
+  };
+};
+
 const readRepositoryChangeSignature = async (launchPath) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
   const [head, status, stagedDiff, unstagedDiff, untracked] = await Promise.all([
@@ -852,6 +872,7 @@ module.exports = {
   listRepositoryHistory,
   parseStatus,
   readDiffSectionContent,
+  readGitIdentity,
   readRepositoryChangeSignature,
   readCommitState,
   readRepositoryState,

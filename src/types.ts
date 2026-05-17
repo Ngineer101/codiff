@@ -62,6 +62,12 @@ export type RepositoryState = {
   source: ReviewSource;
 };
 
+export type GitIdentity = {
+  email: string;
+  gravatarUrl?: string;
+  name: string;
+};
+
 export type DiffSectionContentRequest = {
   force?: boolean;
   kind: DiffSection['kind'];
