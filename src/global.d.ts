@@ -6,6 +6,8 @@ import type {
   GitIdentity,
   RepositoryHistory,
   RepositoryState,
+  ReviewAssistantRequest,
+  ReviewAssistantResult,
   ReviewSource,
   WalkthroughResult,
 } from './types.ts';
@@ -13,6 +15,7 @@ import type {
 declare global {
   interface Window {
     codiff: {
+      askReviewAssistant: (request: ReviewAssistantRequest) => Promise<ReviewAssistantResult>;
       getDiffSectionContent: (request: DiffSectionContentRequest) => Promise<DiffSection>;
       getGitIdentity: () => Promise<GitIdentity>;
       getLaunchOptions: () => Promise<CodiffLaunchOptions>;

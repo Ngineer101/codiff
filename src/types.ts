@@ -100,6 +100,35 @@ export type WalkthroughResult =
       status: 'unavailable';
     };
 
+export type ReviewAssistantRequest = {
+  comment: {
+    body: string;
+    filePath: string;
+    lineNumber: number;
+    sectionId: string;
+    side: 'additions' | 'deletions';
+  };
+  source?: ReviewSource;
+  walkthroughNote?: {
+    action: WalkthroughFile['action'];
+    context: string;
+    groupReason: string;
+    groupTitle: string;
+    impact: WalkthroughFile['impact'];
+    reason: string;
+  };
+};
+
+export type ReviewAssistantResult =
+  | {
+      reply: string;
+      status: 'ready';
+    }
+  | {
+      reason: string;
+      status: 'unavailable';
+    };
+
 export type GitIdentity = {
   email: string;
   gravatarUrl?: string;

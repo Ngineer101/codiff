@@ -32,6 +32,7 @@ const {
   readRepositoryState,
   validateRepositoryPath,
 } = require('./git-state.cjs');
+const { readReviewAssistantReply } = require('./review-assist.cjs');
 const { readWalkthrough } = require('./walkthrough.cjs');
 
 const root = dirname(__dirname);
@@ -499,6 +500,13 @@ ipcMain.handle('codiff:getWalkthrough', async (event, source) => {
   const launchOptions = windowLaunchOptions.get(event.sender.id);
   const state = await readRepositoryState(repositoryPath, source || launchOptions?.source);
   return readWalkthrough(state);
+});
+
+ipcMain.handle('codiff:askReviewAssistant', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  const launchOptions = windowLaunchOptions.get(event.sender.id);
+  const state = await readRepositoryState(repositoryPath, request?.source || launchOptions?.source);
+  return readReviewAssistantReply(state, request);
 });
 
 ipcMain.handle('codiff:getDiffSectionContent', async (event, request) => {

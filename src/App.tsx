@@ -12,6 +12,7 @@ import { FileTree, useFileTree } from '@pierre/trees/react';
 import {
   useCallback,
   useEffect,
+  Fragment,
   useMemo,
   useRef,
   useState,
@@ -19,6 +20,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import codexIconUrl from './assets/codex.svg';
 import dunkelTheme from './themes/dunkel.json' with { type: 'json' };
 import lichtTheme from './themes/licht.json' with { type: 'json' };
 import type {
@@ -30,6 +32,7 @@ import type {
   GitFileStatus,
   HistoryEntry,
   RepositoryState,
+  ReviewAssistantRequest,
   Walkthrough,
   ReviewSource,
 } from './types.ts';
@@ -57,6 +60,11 @@ type DiffSearchResult = {
 
 type ReviewComment = {
   body: string;
+  codexReply?: {
+    body?: string;
+    error?: string;
+    status: 'error' | 'loading' | 'ready';
+  };
   filePath: string;
   id: string;
   lineNumber: number;
@@ -120,9 +128,31 @@ const renderInlineMarkdown = (text: string): ReactNode => {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
+  const renderText = (value: string, keyPrefix: string): Array<ReactNode> => {
+    const textNodes: Array<ReactNode> = [];
+    const boldPattern = /\*\*([^*\n]+)\*\*/g;
+    let textLastIndex = 0;
+    let boldMatch: RegExpExecArray | null;
+
+    while ((boldMatch = boldPattern.exec(value))) {
+      if (boldMatch.index > textLastIndex) {
+        textNodes.push(value.slice(textLastIndex, boldMatch.index));
+      }
+
+      textNodes.push(<strong key={`${keyPrefix}:bold:${boldMatch.index}`}>{boldMatch[1]}</strong>);
+      textLastIndex = boldPattern.lastIndex;
+    }
+
+    if (textLastIndex < value.length) {
+      textNodes.push(value.slice(textLastIndex));
+    }
+
+    return textNodes.length > 0 ? textNodes : [value];
+  };
+
   while ((match = pattern.exec(text))) {
     if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
+      nodes.push(...renderText(text.slice(lastIndex, match.index), `${lastIndex}`));
     }
 
     nodes.push(
@@ -134,10 +164,70 @@ const renderInlineMarkdown = (text: string): ReactNode => {
   }
 
   if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+    nodes.push(...renderText(text.slice(lastIndex), `${lastIndex}`));
   }
 
   return nodes.length > 0 ? nodes : text;
+};
+
+const renderMarkdown = (text: string): ReactNode => {
+  const blocks: Array<ReactNode> = [];
+  const renderTextBlocks = (value: string, keyPrefix: string) => {
+    for (const [index, block] of value
+      .split(/\n{2,}/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .entries()) {
+      const lines = block.split('\n');
+      const listItems = lines
+        .map((line) => line.trim().match(/^[-*]\s+(.+)$/)?.[1])
+        .filter((line): line is string => line != null);
+
+      if (listItems.length === lines.length) {
+        blocks.push(
+          <ul key={`${keyPrefix}:list:${index}`}>
+            {listItems.map((line, lineIndex) => (
+              <li key={`${keyPrefix}:list:${index}:${lineIndex}`}>{renderInlineMarkdown(line)}</li>
+            ))}
+          </ul>,
+        );
+      } else {
+        blocks.push(
+          <p key={`${keyPrefix}:p:${index}`}>
+            {lines.map((line, lineIndex) => (
+              <span key={`${keyPrefix}:p:${index}:${lineIndex}`}>
+                {lineIndex > 0 ? <br /> : null}
+                {renderInlineMarkdown(line)}
+              </span>
+            ))}
+          </p>,
+        );
+      }
+    }
+  };
+
+  const fencePattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencePattern.exec(text))) {
+    if (match.index > lastIndex) {
+      renderTextBlocks(text.slice(lastIndex, match.index), `${lastIndex}`);
+    }
+
+    blocks.push(
+      <pre key={`code:${match.index}`}>
+        <code>{match[2]}</code>
+      </pre>,
+    );
+    lastIndex = fencePattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    renderTextBlocks(text.slice(lastIndex), `${lastIndex}`);
+  }
+
+  return blocks.length > 0 ? blocks : renderInlineMarkdown(text);
 };
 
 const walkthroughActionLabel: Record<WalkthroughNote['action'], string> = {
@@ -1511,12 +1601,19 @@ function ReviewAvatar({ identity }: { identity: GitIdentity | null }) {
   );
 }
 
+function CodexAvatar() {
+  return (
+    <img alt="" className="review-comment-avatar codex" draggable={false} src={codexIconUrl} />
+  );
+}
+
 function ReviewAnnotation({
   annotation,
   comments,
   focusCommentId,
   focusCommentRequest,
   identity,
+  onAskCodex,
   onDeleteComment,
   onUpdateComment,
 }: {
@@ -1525,6 +1622,7 @@ function ReviewAnnotation({
   focusCommentId: string | null;
   focusCommentRequest: number;
   identity: GitIdentity | null;
+  onAskCodex: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
   onUpdateComment: (commentId: string, body: string) => void;
 }) {
@@ -1563,39 +1661,74 @@ function ReviewAnnotation({
 
   return (
     <div className="review-comment-thread">
-      {annotationComments.map((comment, index) => (
-        <div className="review-comment" key={comment.id}>
-          <ReviewAvatar identity={identity} />
-          <div className="review-comment-body">
-            <div className="review-comment-header">
-              <strong>{identity?.name || identity?.email || 'Git user'}</strong>
-              <span>
-                {comment.side === 'additions' ? 'New' : 'Old'} line {comment.lineNumber}
-              </span>
-              <button
-                aria-label="Delete comment"
-                className="review-comment-delete"
-                onClick={() => onDeleteComment(comment.id)}
-                title="Delete comment"
-                type="button"
-              >
-                <span aria-hidden className="review-comment-delete-icon" />
-              </button>
+      {annotationComments.map((comment) => {
+        const canAskCodex =
+          comment.body.trim().length > 0 && comment.codexReply?.status !== 'loading';
+
+        return (
+          <Fragment key={comment.id}>
+            <div className="review-comment">
+              <ReviewAvatar identity={identity} />
+              <div className="review-comment-body">
+                <div className="review-comment-header">
+                  <strong>{identity?.name || identity?.email || 'Git user'}</strong>
+                  <span>
+                    {comment.side === 'additions' ? 'New' : 'Old'} line {comment.lineNumber}
+                  </span>
+                  <button
+                    className="review-comment-ask"
+                    disabled={!canAskCodex}
+                    onClick={() => onAskCodex(comment.id)}
+                    title={canAskCodex ? 'Ask Codex' : 'Write a note before asking Codex'}
+                    type="button"
+                  >
+                    Ask
+                  </button>
+                  <button
+                    aria-label="Delete comment"
+                    className="review-comment-delete"
+                    onClick={() => onDeleteComment(comment.id)}
+                    title="Delete comment"
+                    type="button"
+                  >
+                    <span aria-hidden className="review-comment-delete-icon" />
+                  </button>
+                </div>
+                <textarea
+                  aria-label={`Comment on ${comment.filePath} line ${comment.lineNumber}`}
+                  className="review-comment-input"
+                  onChange={(event) => onUpdateComment(comment.id, event.currentTarget.value)}
+                  onKeyDown={(event) => handleCommentKeyDown(event, comment)}
+                  placeholder="Write a review comment…"
+                  ref={comment.id === focusCommentId ? focusTextareaRef : undefined}
+                  rows={3}
+                  spellCheck
+                  value={comment.body}
+                />
+              </div>
             </div>
-            <textarea
-              aria-label={`Comment on ${comment.filePath} line ${comment.lineNumber}`}
-              className="review-comment-input"
-              onChange={(event) => onUpdateComment(comment.id, event.currentTarget.value)}
-              onKeyDown={(event) => handleCommentKeyDown(event, comment)}
-              placeholder="Write a review comment…"
-              ref={comment.id === focusCommentId ? focusTextareaRef : undefined}
-              rows={3}
-              spellCheck
-              value={comment.body}
-            />
-          </div>
-        </div>
-      ))}
+            {comment.codexReply ? (
+              <div className="review-comment codex">
+                <CodexAvatar />
+                <div className="review-comment-body codex">
+                  <div className="review-comment-header codex">
+                    <strong>Codex</strong>
+                  </div>
+                  <div
+                    className={`review-comment-codex-reply${
+                      comment.codexReply.status === 'loading' ? ' loading' : ''
+                    }${comment.codexReply.status === 'error' ? ' error' : ''}`}
+                  >
+                    {comment.codexReply.status === 'loading'
+                      ? 'Waiting on Codex…'
+                      : renderMarkdown(comment.codexReply.body ?? comment.codexReply.error ?? '')}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -1610,6 +1743,7 @@ function ReviewCodeView({
   forceExpandedPaths,
   gitIdentity,
   itemVersionByPath,
+  onAskCodex,
   onCreateComment,
   onDeleteComment,
   onOpenFile,
@@ -1633,6 +1767,7 @@ function ReviewCodeView({
   forceExpandedPaths: ReadonlySet<string>;
   gitIdentity: GitIdentity | null;
   itemVersionByPath: Readonly<Record<string, number>>;
+  onAskCodex: (commentId: string) => void;
   onCreateComment: (comment: Omit<ReviewComment, 'body' | 'id'>) => void;
   onDeleteComment: (commentId: string) => void;
   onOpenFile: (file: ChangedFile) => void;
@@ -1945,11 +2080,20 @@ function ReviewCodeView({
           focusCommentId={focusCommentId}
           focusCommentRequest={focusCommentRequest}
           identity={gitIdentity}
+          onAskCodex={onAskCodex}
           onDeleteComment={onDeleteComment}
           onUpdateComment={onUpdateComment}
         />
       ) : null,
-    [comments, focusCommentId, focusCommentRequest, gitIdentity, onDeleteComment, onUpdateComment],
+    [
+      comments,
+      focusCommentId,
+      focusCommentRequest,
+      gitIdentity,
+      onAskCodex,
+      onDeleteComment,
+      onUpdateComment,
+    ],
   );
 
   const handleScroll = useCallback(
@@ -3074,6 +3218,86 @@ export default function App() {
     setReviewComments((current) => current.filter((comment) => comment.id !== commentId));
   }, []);
 
+  const updateCodexReply = useCallback(
+    (commentId: string, filePath: string, codexReply: NonNullable<ReviewComment['codexReply']>) => {
+      setReviewComments((current) =>
+        current.map((comment) =>
+          comment.id === commentId
+            ? {
+                ...comment,
+                codexReply,
+              }
+            : comment,
+        ),
+      );
+      bumpItemVersion(filePath);
+    },
+    [bumpItemVersion],
+  );
+
+  const askCodex = useCallback(
+    (commentId: string) => {
+      const currentState = stateRef.current;
+      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
+      if (
+        !currentState ||
+        !comment ||
+        comment.body.trim().length === 0 ||
+        comment.codexReply?.status === 'loading'
+      ) {
+        return;
+      }
+
+      const note = walkthroughNotes.get(comment.filePath);
+      const request: ReviewAssistantRequest = {
+        comment: {
+          body: comment.body,
+          filePath: comment.filePath,
+          lineNumber: comment.lineNumber,
+          sectionId: comment.sectionId,
+          side: comment.side,
+        },
+        source: currentState.source,
+        walkthroughNote: note
+          ? {
+              action: note.action,
+              context: note.context,
+              groupReason: note.groupReason,
+              groupTitle: note.groupTitle,
+              impact: note.impact,
+              reason: note.reason,
+            }
+          : undefined,
+      };
+
+      updateCodexReply(comment.id, comment.filePath, { status: 'loading' });
+      void window.codiff
+        .askReviewAssistant(request)
+        .then((result) => {
+          updateCodexReply(
+            comment.id,
+            comment.filePath,
+            result.status === 'ready'
+              ? {
+                  body: result.reply,
+                  status: 'ready',
+                }
+              : {
+                  error: result.reason,
+                  status: 'error',
+                },
+          );
+        })
+        .catch((error: unknown) => {
+          updateCodexReply(comment.id, comment.filePath, {
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error',
+          });
+        });
+    },
+    [updateCodexReply, walkthroughNotes],
+  );
+
   if (error) {
     return (
       <main className="empty-state">
@@ -3189,6 +3413,7 @@ export default function App() {
             forceExpandedPaths={diffSearchMatchPathSet}
             gitIdentity={gitIdentity}
             itemVersionByPath={itemVersionByPath}
+            onAskCodex={askCodex}
             onCreateComment={createComment}
             onDeleteComment={deleteComment}
             onOpenFile={openFile}

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('codiff', {
+  askReviewAssistant: (request) => ipcRenderer.invoke('codiff:askReviewAssistant', request),
   getDiffSectionContent: (request) => ipcRenderer.invoke('codiff:getDiffSectionContent', request),
   getGitIdentity: () => ipcRenderer.invoke('codiff:getGitIdentity'),
   getLaunchOptions: () => ipcRenderer.invoke('codiff:getLaunchOptions'),
