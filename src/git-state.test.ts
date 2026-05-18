@@ -22,6 +22,12 @@ type StatusEntry = {
 };
 
 type GitStateModule = {
+  parseGitHubPullRequestUrl: (value: string) => {
+    number: number;
+    owner: string;
+    repo: string;
+    url: string;
+  };
   parseStatus: (raw: string) => Array<StatusEntry>;
   readDiffSectionContent: (
     launchPath: string,
@@ -37,6 +43,7 @@ type GitStateModule = {
 const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
 const {
+  parseGitHubPullRequestUrl,
   parseStatus,
   readDiffSectionContent,
   readRepositoryChangeSignature,
@@ -91,6 +98,15 @@ test('parseStatus reads staged rename paths in porcelain v1 -z order', () => {
       untracked: false,
     },
   ]);
+});
+
+test('parseGitHubPullRequestUrl reads canonical pull request URLs', () => {
+  expect(parseGitHubPullRequestUrl('https://github.com/nkzw-tech/codiff/pull/3')).toEqual({
+    number: 3,
+    owner: 'nkzw-tech',
+    repo: 'codiff',
+    url: 'https://github.com/nkzw-tech/codiff/pull/3',
+  });
 });
 
 test('parseStatus preserves staged and unstaged flags on the same file', () => {

@@ -31,6 +31,8 @@ const {
   readDiffSectionContent,
   readRepositoryChangeSignature,
   readRepositoryState,
+  submitPullRequestComment,
+  submitPullRequestReview,
   validateRepositoryPath,
 } = require('./git-state.cjs');
 const { readReviewAssistantReply } = require('./review-assist.cjs');
@@ -47,6 +49,18 @@ let preferences = {
 const commitHashPattern = /^[0-9a-f]{4,64}$/i;
 
 const isCommitHashArgument = (arg) => commitHashPattern.test(arg) && !existsSync(resolve(arg));
+
+const isPullRequestUrlArgument = (arg) => {
+  try {
+    const url = new URL(arg);
+    return (
+      url.hostname.toLowerCase() === 'github.com' &&
+      /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+};
 
 const parseCommandLineArguments = (commandLine = process.argv) => {
   const args = commandLine.slice(process.defaultApp ? 2 : 1);
@@ -67,10 +81,13 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
   });
 
   let commitRef = typeof values.commit === 'string' ? values.commit : null;
+  let pullRequestUrl = null;
   let repositoryPath = null;
 
   for (const arg of positionals) {
-    if (!commitRef && isCommitHashArgument(arg)) {
+    if (!pullRequestUrl && isPullRequestUrlArgument(arg)) {
+      pullRequestUrl = arg;
+    } else if (!commitRef && isCommitHashArgument(arg)) {
       commitRef = arg;
     } else if (repositoryPath == null) {
       repositoryPath = arg;
@@ -78,19 +95,26 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
   }
 
   const envCommitRef = useEnvironment ? process.env.CODIFF_COMMIT_REF || '' : '';
+  const envPullRequestUrl = useEnvironment ? process.env.CODIFF_PULL_REQUEST_URL || '' : '';
   const sourceRef = envCommitRef || commitRef;
+  const sourcePullRequestUrl = envPullRequestUrl || pullRequestUrl;
   const repositoryPathProvided = Boolean(
     repositoryPath || (useEnvironment && process.env.CODIFF_REPOSITORY_PATH),
   );
   return {
     launchOptions: {
       repositoryPathProvided,
-      source: sourceRef
+      source: sourcePullRequestUrl
         ? {
-            ref: sourceRef,
-            type: 'commit',
+            type: 'pull-request',
+            url: sourcePullRequestUrl,
           }
-        : undefined,
+        : sourceRef
+          ? {
+              ref: sourceRef,
+              type: 'commit',
+            }
+          : undefined,
       walkthrough:
         (useEnvironment && process.env.CODIFF_WALKTHROUGH === '1') || values.walkthrough === true,
     },
@@ -575,6 +599,16 @@ ipcMain.handle('codiff:askReviewAssistant', async (event, request) => {
   const launchOptions = windowLaunchOptions.get(event.sender.id);
   const state = await readRepositoryState(repositoryPath, request?.source || launchOptions?.source);
   return readReviewAssistantReply(state, request);
+});
+
+ipcMain.handle('codiff:submitPullRequestComment', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return submitPullRequestComment(repositoryPath, request);
+});
+
+ipcMain.handle('codiff:submitPullRequestReview', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return submitPullRequestReview(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:getDiffSectionContent', async (event, request) => {

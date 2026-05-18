@@ -651,6 +651,12 @@
   overflow: hidden;
 }
 
+.review-source-loading {
+  background: var(--code-bg);
+  height: 100%;
+  width: 100%;
+}
+
 .code-view {
   contain: strict;
   display: block;
@@ -979,6 +985,15 @@
   padding: 4px 4px 4px 10px;
 }
 
+.review-comment-header.with-comment-action {
+  grid-template-columns: auto minmax(0, 1fr) auto auto 26px;
+}
+
+.review-comment-header.read-only {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding-right: 10px;
+}
+
 .review-comment-header.codex {
   grid-template-columns: minmax(0, 1fr);
   padding-right: 10px;
@@ -998,7 +1013,7 @@
   white-space: nowrap;
 }
 
-.review-comment-ask {
+.review-comment-action {
   background: transparent;
   border: 1px solid var(--file-border);
   border-radius: var(--review-comment-radius);
@@ -1020,13 +1035,13 @@
     transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.review-comment-ask:disabled {
+.review-comment-action:disabled {
   color: var(--muted);
   cursor: default;
   opacity: 0.5;
 }
 
-.review-comment-ask:not(:disabled):hover {
+.review-comment-action:not(:disabled):hover {
   background: rgb(127 127 127 / 0.12);
   box-shadow:
     0 0 0 1px rgb(255 255 255 / 0.2) inset,
@@ -1035,7 +1050,7 @@
   transform: scale(1.05);
 }
 
-.review-comment-ask:not(:disabled):active {
+.review-comment-action:not(:disabled):active {
   transform: scale(0.95);
 }
 
@@ -1109,6 +1124,17 @@
 
 .review-comment-input::placeholder {
   color: var(--muted);
+}
+
+.review-comment-input.read-only {
+  cursor: default;
+}
+
+.review-comment-error {
+  border-top: 1px solid var(--file-border);
+  color: var(--danger);
+  font: 12px/1.4 var(--font-sans);
+  padding: 8px 10px;
 }
 
 .review-comment-codex-reply {
@@ -1191,15 +1217,25 @@
   word-break: break-word;
 }
 
-.copy-comments-button {
+.review-action-bar {
   -webkit-app-region: no-drag;
+  align-items: center;
+  bottom: 16px;
+  display: inline-flex;
+  gap: 12px;
+  position: fixed;
+  right: 16px;
+  z-index: 12;
+}
+
+.copy-comments-button,
+.review-submit-button {
   -webkit-backdrop-filter: blur(22px) saturate(1.35);
   align-items: center;
   backdrop-filter: blur(22px) saturate(1.35);
   background: color-mix(in srgb, var(--code-bg) 78%, transparent);
   border: 1px solid var(--file-border);
   border-radius: 50%;
-  bottom: 16px;
   box-shadow:
     0 0 0 1px rgb(255 255 255 / 0.16) inset,
     0 0 0 1px var(--file-border),
@@ -1212,15 +1248,13 @@
   height: 46px;
   justify-content: center;
   padding: 0;
-  position: fixed;
-  right: 16px;
   transition: all 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
   transform: scale(1);
   width: 46px;
-  z-index: 12;
 }
 
-.copy-comments-button:hover {
+.copy-comments-button:hover,
+.review-submit-button:hover:not(:disabled) {
   box-shadow:
     0 0 0 1px rgb(255 255 255 / 0.2) inset,
     0 0 0 1px var(--file-border),
@@ -1230,13 +1264,28 @@
   transform: scale(1.05);
 }
 
-.copy-comments-button:active {
+.copy-comments-button:active,
+.review-submit-button:active:not(:disabled) {
   transform: scale(0.95);
+}
+
+.review-submit-button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.58;
 }
 
 .copy-comments-button.copied {
   background: color-mix(in srgb, var(--code-bg) 80%, var(--viewed) 14%);
   color: var(--viewed);
+}
+
+.review-submit-button.approve {
+  color: var(--viewed);
+}
+
+.review-submit-button.request-changes {
+  color: var(--danger);
 }
 
 .copy-comments-icon {
@@ -1296,6 +1345,45 @@
 
 .copy-comments-icon.check::after {
   display: none;
+}
+
+.review-submit-icon {
+  display: block;
+  height: 20px;
+  position: relative;
+  width: 20px;
+}
+
+.review-submit-icon.approve::before {
+  border-bottom: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  content: '';
+  height: 14px;
+  left: 7px;
+  position: absolute;
+  top: 1px;
+  transform: rotate(45deg);
+  width: 7px;
+}
+
+.review-submit-icon.request-changes::before,
+.review-submit-icon.request-changes::after {
+  background: currentColor;
+  border-radius: 2px;
+  content: '';
+  height: 2.5px;
+  left: 2px;
+  position: absolute;
+  top: 9px;
+  width: 16px;
+}
+
+.review-submit-icon.request-changes::before {
+  transform: rotate(45deg);
+}
+
+.review-submit-icon.request-changes::after {
+  transform: rotate(-45deg);
 }
 
 .loading,

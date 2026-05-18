@@ -35,6 +35,8 @@ import type {
   ReviewAssistantRequest,
   Walkthrough,
   ReviewSource,
+  PullRequestExistingReviewComment,
+  PullRequestReviewEvent,
   TerminalHelperStatus,
 } from './types.ts';
 
@@ -60,6 +62,7 @@ type DiffSearchResult = {
 };
 
 type ReviewComment = {
+  author?: PullRequestExistingReviewComment['author'];
   body: string;
   codexReply?: {
     body?: string;
@@ -67,13 +70,22 @@ type ReviewComment = {
     status: 'error' | 'loading' | 'ready';
   };
   filePath: string;
+  githubSubmit?: {
+    error?: string;
+    status: 'error' | 'submitting';
+  };
   id: string;
+  isReadOnly?: boolean;
   lineNumber: number;
   sectionId: string;
   side: 'additions' | 'deletions';
+  submittedAt?: string;
+  url?: string;
 };
 
 type SidebarMode = 'tree' | 'walkthrough' | 'history';
+
+type PullRequestSource = Extract<ReviewSource, { type: 'pull-request' }>;
 
 type WalkthroughNote = {
   action: Walkthrough['groups'][number]['files'][number]['action'];
@@ -127,12 +139,17 @@ const statusLabel: Record<GitFileStatus, string> = {
 
 const sectionLabel: Record<DiffSection['kind'], string> = {
   commit: 'Commit',
+  'pull-request': 'PR',
   staged: 'Staged',
   unstaged: 'Unstaged',
 };
 
 const getSourceKey = (source: ReviewSource) =>
-  source.type === 'commit' ? `commit:${source.ref}` : 'working-tree';
+  source.type === 'commit'
+    ? `commit:${source.ref}`
+    : source.type === 'pull-request'
+      ? `pull-request:${source.owner ?? ''}/${source.repo ?? ''}#${source.number ?? source.url}`
+      : 'working-tree';
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -154,7 +171,13 @@ export const getRepositoryLoadError = (error: unknown): RepositoryLoadError => {
 const getShortRef = (ref: string) => ref.slice(0, 7);
 
 const getSourceLabel = (source: ReviewSource) =>
-  source.type === 'commit' ? getShortRef(source.ref) : 'Uncommitted';
+  source.type === 'commit'
+    ? getShortRef(source.ref)
+    : source.type === 'pull-request'
+      ? source.number
+        ? `PR #${source.number}`
+        : 'Pull request'
+      : 'Uncommitted';
 
 const renderInlineMarkdown = (text: string): ReactNode => {
   const nodes: Array<ReactNode> = [];
@@ -956,7 +979,12 @@ const getCommentKey = (comment: Pick<ReviewComment, 'lineNumber' | 'sectionId' |
 
 const getReviewCommentsDigest = (comments: ReadonlyArray<ReviewComment>) =>
   comments
-    .map((comment) => `${comment.id}:${comment.sectionId}:${comment.side}:${comment.lineNumber}`)
+    .map(
+      (comment) =>
+        `${comment.id}:${comment.sectionId}:${comment.side}:${comment.lineNumber}:${
+          comment.githubSubmit?.status ?? ''
+        }:${comment.githubSubmit?.error ?? ''}`,
+    )
     .join('\0');
 
 const getMarkdownFence = (content: string) => {
@@ -1069,7 +1097,7 @@ export const buildReviewCommentsMarkdown = (
   comments: ReadonlyArray<ReviewComment>,
   showWhitespace: boolean,
 ) => {
-  const pendingComments = comments.filter((comment) => comment.body.trim());
+  const pendingComments = comments.filter((comment) => !comment.isReadOnly && comment.body.trim());
   const filesByPath = new Map(files.map((file) => [file.path, file]));
   const orderedComments = pendingComments.sort((left, right) => {
     const leftFileIndex = files.findIndex((file) => file.path === left.filePath);
@@ -1104,6 +1132,30 @@ export const buildReviewCommentsMarkdown = (
   return markdown ? `# Address these Review Comments\n\n${markdown}` : '';
 };
 
+const getReviewCommentsFromState = (state: RepositoryState): ReadonlyArray<ReviewComment> =>
+  state.source.type === 'pull-request'
+    ? (state.reviewComments ?? []).flatMap((comment) => {
+        const file = state.files.find((candidate) => candidate.path === comment.filePath);
+        const section = file?.sections[0];
+        return section
+          ? [
+              {
+                author: comment.author,
+                body: comment.body,
+                filePath: comment.filePath,
+                id: comment.id,
+                isReadOnly: true,
+                lineNumber: comment.lineNumber,
+                sectionId: section.id,
+                side: comment.side,
+                submittedAt: comment.submittedAt,
+                url: comment.url,
+              },
+            ]
+          : [];
+      })
+    : [];
+
 export const shouldDiscardReviewCommentOnEscape = (
   body: string,
   confirmDiscard: (message: string) => boolean = window.confirm,
@@ -1122,6 +1174,7 @@ function Sidebar({
   onSearchQueryChange,
   onSelectPath,
   onSelectSource,
+  pullRequestSource,
   searchQuery,
   selectedPath,
   walkthroughAvailable,
@@ -1143,6 +1196,7 @@ function Sidebar({
   onSearchQueryChange: (query: string) => void;
   onSelectPath: (path: string) => void;
   onSelectSource: (source: ReviewSource) => void;
+  pullRequestSource: PullRequestSource | null;
   searchQuery: string;
   selectedPath: string | null;
   walkthroughAvailable: boolean;
@@ -1345,6 +1399,7 @@ function Sidebar({
           loading={historyLoading}
           onLoadMore={onLoadMoreHistory}
           onSelectSource={onSelectSource}
+          pullRequestSource={pullRequestSource}
           searchQuery={searchQuery}
         />
       ) : mode === 'walkthrough' && walkthroughAvailable ? (
@@ -1391,6 +1446,7 @@ function HistorySidebar({
   loading,
   onLoadMore,
   onSelectSource,
+  pullRequestSource,
   searchQuery,
 }: {
   currentSource: ReviewSource;
@@ -1399,29 +1455,40 @@ function HistorySidebar({
   loading: boolean;
   onLoadMore: () => void;
   onSelectSource: (source: ReviewSource) => void;
+  pullRequestSource: PullRequestSource | null;
   searchQuery: string;
 }) {
   const currentSourceKey = getSourceKey(currentSource);
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const listRef = useRef<HTMLDivElement>(null);
   const rows = useMemo(
-    () => [
-      {
-        committedAt: null,
-        key: 'working-tree',
-        ref: '',
-        source: { type: 'working-tree' } satisfies ReviewSource,
-        subject: 'Uncommitted',
-      },
-      ...entries.map((entry) => ({
-        committedAt: entry.committedAt,
-        key: `commit:${entry.ref}`,
-        ref: entry.ref,
-        source: { ref: entry.ref, type: 'commit' } satisfies ReviewSource,
-        subject: entry.subject,
-      })),
-    ],
-    [entries],
+    () =>
+      [
+        pullRequestSource
+          ? {
+              committedAt: null,
+              key: getSourceKey(pullRequestSource),
+              ref: pullRequestSource.number ? `PR #${pullRequestSource.number}` : 'PR',
+              source: pullRequestSource satisfies ReviewSource,
+              subject: pullRequestSource.title || 'Pull Request',
+            }
+          : null,
+        {
+          committedAt: null,
+          key: 'working-tree',
+          ref: '',
+          source: { type: 'working-tree' } satisfies ReviewSource,
+          subject: 'Uncommitted',
+        },
+        ...entries.map((entry) => ({
+          committedAt: entry.committedAt,
+          key: `commit:${entry.ref}`,
+          ref: entry.ref,
+          source: { ref: entry.ref, type: 'commit' } satisfies ReviewSource,
+          subject: entry.subject,
+        })),
+      ].filter((row): row is NonNullable<typeof row> => row != null),
+    [entries, pullRequestSource],
   );
   const visibleRows = useMemo(
     () =>
@@ -1458,7 +1525,11 @@ function HistorySidebar({
             type="button"
           >
             <span className="history-entry-ref">
-              {row.source.type === 'commit' ? getShortRef(row.source.ref) : 'local'}
+              {row.source.type === 'commit'
+                ? getShortRef(row.source.ref)
+                : row.source.type === 'pull-request'
+                  ? row.ref
+                  : 'local'}
             </span>
             <span className="history-entry-subject">{row.subject}</span>
           </button>
@@ -1626,11 +1697,18 @@ function CodeViewHeader({
   );
 }
 
-function ReviewAvatar({ identity }: { identity: GitIdentity | null }) {
-  const label = identity?.name || identity?.email || 'Git user';
+function ReviewAvatar({
+  author,
+  identity,
+}: {
+  author?: PullRequestExistingReviewComment['author'];
+  identity: GitIdentity | null;
+}) {
+  const label = author?.login || identity?.name || identity?.email || 'Git user';
+  const avatarUrl = author?.avatarUrl || identity?.gravatarUrl;
 
-  return identity?.gravatarUrl ? (
-    <img alt="" className="review-comment-avatar" draggable={false} src={identity.gravatarUrl} />
+  return avatarUrl ? (
+    <img alt="" className="review-comment-avatar" draggable={false} src={avatarUrl} />
   ) : (
     <span aria-hidden className="review-comment-avatar fallback">
       {label.trim()[0]?.toUpperCase() ?? '?'}
@@ -1645,7 +1723,12 @@ function CodexAvatar() {
 }
 
 const canAskCodexForComment = (comment: ReviewComment) =>
-  comment.body.trim().length > 0 && comment.codexReply?.status !== 'loading';
+  !comment.isReadOnly && comment.body.trim().length > 0 && comment.codexReply?.status !== 'loading';
+
+const canSubmitCommentToGitHub = (comment: ReviewComment) =>
+  !comment.isReadOnly &&
+  comment.body.trim().length > 0 &&
+  comment.githubSubmit?.status !== 'submitting';
 
 function ReviewAnnotation({
   annotation,
@@ -1653,8 +1736,10 @@ function ReviewAnnotation({
   focusCommentId,
   focusCommentRequest,
   identity,
+  isPullRequest,
   onAskCodex,
   onDeleteComment,
+  onSubmitComment,
   onUpdateComment,
 }: {
   annotation: DiffLineAnnotation<ReviewAnnotationMetadata>;
@@ -1662,8 +1747,10 @@ function ReviewAnnotation({
   focusCommentId: string | null;
   focusCommentRequest: number;
   identity: GitIdentity | null;
+  isPullRequest: boolean;
   onAskCodex: (commentId: string) => void;
   onDeleteComment: (commentId: string) => void;
+  onSubmitComment: (commentId: string) => void;
   onUpdateComment: (commentId: string, body: string) => void;
 }) {
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1681,19 +1768,27 @@ function ReviewAnnotation({
 
   const handleCommentKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>, comment: ReviewComment) => {
-      if (
-        event.key === 'Enter' &&
-        event.metaKey &&
-        !event.shiftKey &&
-        canAskCodexForComment(comment)
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-        onAskCodex(comment.id);
+      if (event.key === 'Enter' && event.metaKey && !event.shiftKey) {
+        if (isPullRequest && canSubmitCommentToGitHub(comment)) {
+          event.preventDefault();
+          event.stopPropagation();
+          onSubmitComment(comment.id);
+          return;
+        }
+
+        if (!isPullRequest && canAskCodexForComment(comment)) {
+          event.preventDefault();
+          event.stopPropagation();
+          onAskCodex(comment.id);
+        }
         return;
       }
 
       if (event.key !== 'Escape') {
+        return;
+      }
+
+      if (comment.isReadOnly) {
         return;
       }
 
@@ -1704,7 +1799,7 @@ function ReviewAnnotation({
         onDeleteComment(comment.id);
       }
     },
-    [onAskCodex, onDeleteComment],
+    [isPullRequest, onAskCodex, onDeleteComment, onSubmitComment],
   );
 
   if (annotationComments.length === 0) {
@@ -1715,47 +1810,77 @@ function ReviewAnnotation({
     <div className="review-comment-thread">
       {annotationComments.map((comment) => {
         const canAskCodex = canAskCodexForComment(comment);
+        const canSubmitComment = canSubmitCommentToGitHub(comment);
+        const displayName =
+          comment.author?.login || identity?.name || identity?.email || 'Git user';
 
         return (
           <Fragment key={comment.id}>
             <div className="review-comment">
-              <ReviewAvatar identity={identity} />
+              <ReviewAvatar author={comment.author} identity={identity} />
               <div className="review-comment-body">
-                <div className="review-comment-header">
-                  <strong>{identity?.name || identity?.email || 'Git user'}</strong>
+                <div
+                  className={`review-comment-header${
+                    isPullRequest && !comment.isReadOnly ? ' with-comment-action' : ''
+                  }${comment.isReadOnly ? ' read-only' : ''}`}
+                >
+                  <strong>{displayName}</strong>
                   <span>
                     {comment.side === 'additions' ? 'New' : 'Old'} line {comment.lineNumber}
                   </span>
-                  <button
-                    className="review-comment-ask"
-                    disabled={!canAskCodex}
-                    onClick={() => onAskCodex(comment.id)}
-                    title={canAskCodex ? 'Ask Codex' : 'Write a note before asking Codex'}
-                    type="button"
-                  >
-                    Ask
-                  </button>
-                  <button
-                    aria-label="Delete comment"
-                    className="review-comment-delete"
-                    onClick={() => onDeleteComment(comment.id)}
-                    title="Delete comment"
-                    type="button"
-                  >
-                    <span aria-hidden className="review-comment-delete-icon" />
-                  </button>
+                  {!comment.isReadOnly ? (
+                    <button
+                      className="review-comment-action"
+                      disabled={!canAskCodex}
+                      onClick={() => onAskCodex(comment.id)}
+                      title={canAskCodex ? 'Ask Codex' : 'Write a note before asking Codex'}
+                      type="button"
+                    >
+                      Ask
+                    </button>
+                  ) : null}
+                  {isPullRequest && !comment.isReadOnly ? (
+                    <button
+                      className="review-comment-action"
+                      disabled={!canSubmitComment}
+                      onClick={() => onSubmitComment(comment.id)}
+                      title={
+                        canSubmitComment
+                          ? 'Submit comment to GitHub'
+                          : 'Write a note before commenting'
+                      }
+                      type="button"
+                    >
+                      {comment.githubSubmit?.status === 'submitting' ? 'Sending' : 'Comment'}
+                    </button>
+                  ) : null}
+                  {!comment.isReadOnly ? (
+                    <button
+                      aria-label="Delete comment"
+                      className="review-comment-delete"
+                      onClick={() => onDeleteComment(comment.id)}
+                      title="Delete comment"
+                      type="button"
+                    >
+                      <span aria-hidden className="review-comment-delete-icon" />
+                    </button>
+                  ) : null}
                 </div>
                 <textarea
                   aria-label={`Comment on ${comment.filePath} line ${comment.lineNumber}`}
-                  className="review-comment-input"
+                  className={`review-comment-input${comment.isReadOnly ? ' read-only' : ''}`}
                   onChange={(event) => onUpdateComment(comment.id, event.currentTarget.value)}
                   onKeyDown={(event) => handleCommentKeyDown(event, comment)}
                   placeholder="Write a review comment…"
+                  readOnly={comment.isReadOnly}
                   ref={comment.id === focusCommentId ? focusTextareaRef : undefined}
                   rows={3}
                   spellCheck
                   value={comment.body}
                 />
+                {comment.githubSubmit?.status === 'error' ? (
+                  <div className="review-comment-error">{comment.githubSubmit.error}</div>
+                ) : null}
               </div>
             </div>
             {comment.codexReply ? (
@@ -1795,12 +1920,14 @@ function ReviewCodeView({
   focusCommentRequest,
   forceExpandedPaths,
   gitIdentity,
+  isPullRequest,
   itemVersionByPath,
   onAskCodex,
   onCreateComment,
   onDeleteComment,
   onOpenFile,
   onSelectPathFromScroll,
+  onSubmitComment,
   onToggleCollapsed,
   onToggleViewed,
   onUpdateComment,
@@ -1819,12 +1946,14 @@ function ReviewCodeView({
   focusCommentRequest: number;
   forceExpandedPaths: ReadonlySet<string>;
   gitIdentity: GitIdentity | null;
+  isPullRequest: boolean;
   itemVersionByPath: Readonly<Record<string, number>>;
   onAskCodex: (commentId: string) => void;
   onCreateComment: (comment: Omit<ReviewComment, 'body' | 'id'>) => void;
   onDeleteComment: (commentId: string) => void;
   onOpenFile: (file: ChangedFile) => void;
   onSelectPathFromScroll: (viewer: CodeViewInstance) => void;
+  onSubmitComment: (commentId: string) => void;
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean) => void;
   onToggleViewed: (file: ChangedFile, isViewed: boolean) => void;
   onUpdateComment: (commentId: string, body: string) => void;
@@ -2136,8 +2265,10 @@ function ReviewCodeView({
           focusCommentId={focusCommentId}
           focusCommentRequest={focusCommentRequest}
           identity={gitIdentity}
+          isPullRequest={isPullRequest}
           onAskCodex={onAskCodex}
           onDeleteComment={onDeleteComment}
+          onSubmitComment={onSubmitComment}
           onUpdateComment={onUpdateComment}
         />
       ) : null,
@@ -2146,8 +2277,10 @@ function ReviewCodeView({
       focusCommentId,
       focusCommentRequest,
       gitIdentity,
+      isPullRequest,
       onAskCodex,
       onDeleteComment,
+      onSubmitComment,
       onUpdateComment,
     ],
   );
@@ -2344,7 +2477,9 @@ function CopyCommentsButton({
 }) {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
-  const pendingCommentCount = comments.filter((comment) => comment.body.trim()).length;
+  const pendingCommentCount = comments.filter(
+    (comment) => !comment.isReadOnly && comment.body.trim(),
+  ).length;
 
   useEffect(
     () => () => {
@@ -2391,6 +2526,46 @@ function CopyCommentsButton({
   );
 }
 
+function PullRequestReviewButtons({
+  disabled,
+  onSubmitReview,
+  submittingEvent,
+}: {
+  disabled: boolean;
+  onSubmitReview: (event: PullRequestReviewEvent) => void;
+  submittingEvent: PullRequestReviewEvent | null;
+}) {
+  return (
+    <>
+      <button
+        aria-label="Approve pull request"
+        className="review-submit-button approve"
+        disabled={disabled}
+        onClick={() => onSubmitReview('APPROVE')}
+        title="Approve pull request"
+        type="button"
+      >
+        <span aria-hidden className="review-submit-icon approve" />
+      </button>
+      <button
+        aria-label="Request changes"
+        className="review-submit-button request-changes"
+        disabled={disabled}
+        onClick={() => onSubmitReview('REQUEST_CHANGES')}
+        title="Request changes"
+        type="button"
+      >
+        <span
+          aria-hidden
+          className={`review-submit-icon request-changes${
+            submittingEvent === 'REQUEST_CHANGES' ? ' submitting' : ''
+          }`}
+        />
+      </button>
+    </>
+  );
+}
+
 export default function App() {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [activeDiffSearchMatchIndex, setActiveDiffSearchMatchIndex] = useState(0);
@@ -2405,11 +2580,15 @@ export default function App() {
   const [historyHasMore, setHistoryHasMore] = useState(true);
   const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPullRequestSource, setHistoryPullRequestSource] =
+    useState<PullRequestSource | null>(null);
   const [itemVersionByPath, setItemVersionByPath] = useState<Record<string, number>>({});
   const [localChangesDetected, setLocalChangesDetected] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<CodiffLaunchOptions>(defaultLaunchOptions);
   const [preferences, setPreferences] = useState<CodiffPreferences>(defaultPreferences);
   const [reviewComments, setReviewComments] = useState<ReadonlyArray<ReviewComment>>([]);
+  const [pullRequestReviewSubmitting, setPullRequestReviewSubmitting] =
+    useState<PullRequestReviewEvent | null>(null);
   const [scrollTarget, setScrollTarget] = useState<{ path: string; request: number } | null>(null);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -2536,6 +2715,9 @@ export default function App() {
       setHistoryEntries(history.entries);
       setHistoryHasMore(history.entries.length >= HISTORY_PAGE_SIZE);
       setHistoryLimit(HISTORY_PAGE_SIZE);
+      setHistoryPullRequestSource(
+        orderedState.source.type === 'pull-request' ? orderedState.source : null,
+      );
       setState(orderedState);
       setLoadError(null);
       setCollapsed(
@@ -2548,7 +2730,7 @@ export default function App() {
       setItemVersionByPath({});
       setFocusCommentId(null);
       setFocusCommentRequest(0);
-      setReviewComments([]);
+      setReviewComments(getReviewCommentsFromState(orderedState));
       setViewed(nextViewed);
       setSelectedPath((current) => current ?? initialFiles[0]?.path ?? null);
     };
@@ -3101,9 +3283,12 @@ export default function App() {
             );
 
           setState(orderedState);
+          if (orderedState.source.type === 'pull-request') {
+            setHistoryPullRequestSource(orderedState.source);
+          }
           setCollapsed(new Set(nextCollapsed));
           setItemVersionByPath({});
-          setReviewComments(session?.reviewComments ?? []);
+          setReviewComments(session?.reviewComments ?? getReviewCommentsFromState(orderedState));
           setViewed(nextViewed);
           setSelectedPath(nextSelectedPath);
           setWalkthrough(session?.walkthrough ?? null);
@@ -3325,7 +3510,9 @@ export default function App() {
 
   const updateComment = useCallback((commentId: string, body: string) => {
     setReviewComments((current) =>
-      current.map((comment) => (comment.id === commentId ? { ...comment, body } : comment)),
+      current.map((comment) =>
+        comment.id === commentId && !comment.isReadOnly ? { ...comment, body } : comment,
+      ),
     );
   }, []);
 
@@ -3347,6 +3534,26 @@ export default function App() {
         ),
       );
       bumpItemVersion(filePath);
+    },
+    [bumpItemVersion],
+  );
+
+  const updateGitHubSubmit = useCallback(
+    (commentId: string, githubSubmit: ReviewComment['githubSubmit']) => {
+      setReviewComments((current) =>
+        current.map((comment) =>
+          comment.id === commentId
+            ? {
+                ...comment,
+                githubSubmit,
+              }
+            : comment,
+        ),
+      );
+      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
+      if (comment) {
+        bumpItemVersion(comment.filePath);
+      }
     },
     [bumpItemVersion],
   );
@@ -3414,6 +3621,100 @@ export default function App() {
     [updateCodexReply, walkthroughNotes],
   );
 
+  const submitPullRequestComment = useCallback(
+    (commentId: string) => {
+      const currentState = stateRef.current;
+      const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
+      if (
+        currentState?.source.type !== 'pull-request' ||
+        !comment ||
+        comment.body.trim().length === 0 ||
+        comment.githubSubmit?.status === 'submitting'
+      ) {
+        return;
+      }
+
+      updateGitHubSubmit(comment.id, { status: 'submitting' });
+      void window.codiff
+        .submitPullRequestComment({
+          comment: {
+            body: comment.body,
+            filePath: comment.filePath,
+            lineNumber: comment.lineNumber,
+            side: comment.side,
+          },
+          source: currentState.source,
+        })
+        .then((submittedComment) => {
+          setFocusCommentId((current) => (current === comment.id ? null : current));
+          setReviewComments((current) =>
+            current.map((candidate) =>
+              candidate.id === comment.id
+                ? {
+                    author: submittedComment.author,
+                    body: submittedComment.body,
+                    filePath: submittedComment.filePath,
+                    id: submittedComment.id,
+                    isReadOnly: true,
+                    lineNumber: submittedComment.lineNumber,
+                    sectionId: comment.sectionId,
+                    side: submittedComment.side,
+                    submittedAt: submittedComment.submittedAt,
+                    url: submittedComment.url,
+                  }
+                : candidate,
+            ),
+          );
+          bumpItemVersion(comment.filePath);
+        })
+        .catch((error: unknown) => {
+          updateGitHubSubmit(comment.id, {
+            error: error instanceof Error ? error.message : String(error),
+            status: 'error',
+          });
+        });
+    },
+    [bumpItemVersion, updateGitHubSubmit],
+  );
+
+  const submitPullRequestReview = useCallback(
+    (event: PullRequestReviewEvent) => {
+      const currentState = stateRef.current;
+      if (currentState?.source.type !== 'pull-request' || pullRequestReviewSubmitting) {
+        return;
+      }
+
+      const pendingComments = reviewCommentsRef.current.filter(
+        (comment) => !comment.isReadOnly && comment.body.trim(),
+      );
+      const pendingCommentIds = new Set(pendingComments.map((comment) => comment.id));
+      setPullRequestReviewSubmitting(event);
+      void window.codiff
+        .submitPullRequestReview({
+          comments: pendingComments.map((comment) => ({
+            body: comment.body,
+            filePath: comment.filePath,
+            lineNumber: comment.lineNumber,
+            side: comment.side,
+          })),
+          event,
+          source: currentState.source,
+        })
+        .then(() => {
+          setReviewComments((current) =>
+            current.filter((comment) => !pendingCommentIds.has(comment.id)),
+          );
+        })
+        .catch((error: unknown) => {
+          window.alert(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          setPullRequestReviewSubmitting(null);
+        });
+    },
+    [pullRequestReviewSubmitting],
+  );
+
   const installTerminalHelper = useCallback(() => {
     setTerminalHelperInstalling(true);
     window.codiff
@@ -3463,6 +3764,8 @@ export default function App() {
       ? selectedOrSearchPath
       : (visibleFiles[0]?.path ?? null);
   const hasDiffSearchQuery = diffSearchQuery.trim().length > 0;
+  const isPullRequest = state.source.type === 'pull-request';
+  const isSwitchingSource = pendingSource != null;
 
   return (
     <div className="app-shell">
@@ -3480,17 +3783,28 @@ export default function App() {
         query={diffSearchQuery}
         visible={diffSearchVisible}
       />
-      <CopyCommentsButton
-        comments={reviewComments}
-        files={orderedFiles}
-        showWhitespace={showWhitespace}
-      />
+      {!isSwitchingSource ? (
+        <div className="review-action-bar">
+          <CopyCommentsButton
+            comments={reviewComments}
+            files={orderedFiles}
+            showWhitespace={showWhitespace}
+          />
+          {isPullRequest ? (
+            <PullRequestReviewButtons
+              disabled={pullRequestReviewSubmitting != null}
+              onSubmitReview={submitPullRequestReview}
+              submittingEvent={pullRequestReviewSubmitting}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <aside className="sidebar squircle">
         <div className="sidebar-header">
           <div className="sidebar-path-row">
             <div className="sidebar-path" title={state.root}>
               {compactPath(state.root)}
-              {state.source.type === 'commit' ? ` · ${getSourceLabel(state.source)}` : ''}
+              {state.source.type !== 'working-tree' ? ` · ${getSourceLabel(state.source)}` : ''}
             </div>
           </div>
         </div>
@@ -3509,6 +3823,7 @@ export default function App() {
           }
           onSelectPath={selectPath}
           onSelectSource={selectSource}
+          pullRequestSource={historyPullRequestSource}
           searchQuery={sidebarMode === 'history' ? historySearchQuery : fileSearchQuery}
           selectedPath={visibleSelectedPath}
           walkthroughAvailable={walkthrough != null}
@@ -3520,7 +3835,9 @@ export default function App() {
         />
       </aside>
       <main className="review">
-        {state.files.length === 0 ? (
+        {isSwitchingSource ? (
+          <div className="review-source-loading" />
+        ) : state.files.length === 0 ? (
           <div className="empty-state">
             <div className="empty-panel squircle">
               <strong>
@@ -3552,12 +3869,14 @@ export default function App() {
             focusCommentRequest={focusCommentRequest}
             forceExpandedPaths={diffSearchMatchPathSet}
             gitIdentity={gitIdentity}
+            isPullRequest={isPullRequest}
             itemVersionByPath={itemVersionByPath}
             onAskCodex={askCodex}
             onCreateComment={createComment}
             onDeleteComment={deleteComment}
             onOpenFile={openFile}
             onSelectPathFromScroll={updateSelectedPathFromScroll}
+            onSubmitComment={submitPullRequestComment}
             onToggleCollapsed={toggleCollapsed}
             onToggleViewed={toggleViewed}
             onUpdateComment={updateComment}

@@ -9,6 +9,9 @@ import type {
   ReviewAssistantRequest,
   ReviewAssistantResult,
   ReviewSource,
+  SubmitPullRequestCommentRequest,
+  PullRequestExistingReviewComment,
+  SubmitPullRequestReviewRequest,
   TerminalHelperStatus,
   WalkthroughResult,
 } from './types.ts';
@@ -31,6 +34,10 @@ declare global {
       onRepositoryChanged: (callback: (change: { root: string }) => void) => () => void;
       openFile: (path: string) => Promise<void>;
       showInFolder: (path: string) => Promise<void>;
+      submitPullRequestComment: (
+        request: SubmitPullRequestCommentRequest,
+      ) => Promise<PullRequestExistingReviewComment>;
+      submitPullRequestReview: (request: SubmitPullRequestReviewRequest) => Promise<void>;
     };
   }
 }

@@ -1,7 +1,7 @@
 export type DiffSection = {
   binary: boolean;
   id: string;
-  kind: 'commit' | 'staged' | 'unstaged';
+  kind: 'commit' | 'pull-request' | 'staged' | 'unstaged';
   loadState?: 'binary' | 'deferred' | 'directory' | 'error' | 'ready' | 'too-large';
   newFile?: {
     cacheKey?: string;
@@ -40,6 +40,15 @@ export type ReviewSource =
   | {
       ref: string;
       type: 'commit';
+    }
+  | {
+      headSha?: string;
+      number?: number;
+      owner?: string;
+      repo?: string;
+      title?: string;
+      type: 'pull-request';
+      url: string;
     };
 
 export type HistoryEntry = {
@@ -58,6 +67,7 @@ export type RepositoryState = {
   files: ReadonlyArray<ChangedFile>;
   generatedAt: number;
   launchPath: string;
+  reviewComments?: ReadonlyArray<PullRequestExistingReviewComment>;
   root: string;
   source: ReviewSource;
 };
@@ -151,4 +161,36 @@ export type DiffSectionContentRequest = {
 
 export type CodiffPreferences = {
   showWhitespace: boolean;
+};
+
+export type PullRequestReviewComment = {
+  body: string;
+  filePath: string;
+  lineNumber: number;
+  side: 'additions' | 'deletions';
+};
+
+export type PullRequestExistingReviewComment = PullRequestReviewComment & {
+  author: {
+    avatarUrl?: string;
+    login: string;
+    url?: string;
+  };
+  id: string;
+  submittedAt?: string;
+  url?: string;
+};
+
+export type PullRequestReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
+
+export type SubmitPullRequestCommentRequest = {
+  comment: PullRequestReviewComment;
+  source: Extract<ReviewSource, { type: 'pull-request' }>;
+};
+
+export type SubmitPullRequestReviewRequest = {
+  body?: string;
+  comments: ReadonlyArray<PullRequestReviewComment>;
+  event: PullRequestReviewEvent;
+  source: Extract<ReviewSource, { type: 'pull-request' }>;
 };

@@ -1,4 +1,4 @@
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { promises: fs } = require('node:fs');
 const { createHash } = require('node:crypto');
 const { isAbsolute, join, normalize, sep } = require('node:path');
@@ -528,6 +528,353 @@ const normalizeStatus = (statusCode) =>
         ? 'renamed'
         : 'modified';
 
+const parseGitHubPullRequestUrl = (value) => {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Codiff expected a GitHub pull request URL.');
+  }
+
+  if (url.hostname.toLowerCase() !== 'github.com') {
+    throw new Error('Codiff only supports GitHub pull request URLs.');
+  }
+
+  const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/);
+  if (!match) {
+    throw new Error('Codiff expected a GitHub pull request URL.');
+  }
+
+  const [, owner, repo, number] = match;
+  return {
+    number: Number(number),
+    owner,
+    repo,
+    url: `https://github.com/${owner}/${repo}/pull/${number}`,
+  };
+};
+
+const parseGitHubRemoteUrl = (value) => {
+  const trimmed = value.trim();
+  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i);
+  if (sshMatch) {
+    return {
+      owner: sshMatch[1],
+      repo: sshMatch[2].replace(/\.git$/i, ''),
+    };
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname.toLowerCase() !== 'github.com') {
+      return null;
+    }
+
+    const match = url.pathname.match(/^\/([^/]+)\/(.+?)(?:\.git)?$/);
+    return match
+      ? {
+          owner: match[1],
+          repo: match[2].replace(/\.git$/i, ''),
+        }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const readLocalGitHubRemotes = async (repoRoot) => {
+  const raw = await gitOrEmpty(repoRoot, ['remote', '-v']);
+  const remotes = [];
+  for (const line of raw.split('\n')) {
+    const match = line.match(/^\S+\s+(\S+)\s+\((?:fetch|push)\)$/);
+    const remote = match ? parseGitHubRemoteUrl(match[1]) : null;
+    if (remote) {
+      remotes.push(remote);
+    }
+  }
+  return remotes;
+};
+
+const assertPullRequestMatchesRepository = async (repoRoot, pullRequest) => {
+  const remotes = await readLocalGitHubRemotes(repoRoot);
+  const matches = remotes.some(
+    (remote) =>
+      remote.owner.toLowerCase() === pullRequest.owner.toLowerCase() &&
+      remote.repo.toLowerCase() === pullRequest.repo.toLowerCase(),
+  );
+
+  if (!matches) {
+    throw new Error(
+      `Pull request ${pullRequest.owner}/${pullRequest.repo} does not match a GitHub remote in this repository.`,
+    );
+  }
+};
+
+const ghApi = (repoRoot, args, input) =>
+  new Promise((resolve, reject) => {
+    const child = spawn('gh', ['api', ...args], {
+      cwd: repoRoot,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const stdout = [];
+    const stderr = [];
+
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const output = Buffer.concat(stdout).toString('utf8');
+      if (code === 0) {
+        resolve(output);
+        return;
+      }
+
+      const errorOutput = Buffer.concat(stderr).toString('utf8').trim();
+      reject(new Error(errorOutput || `gh api exited with code ${code}.`));
+    });
+
+    if (input == null) {
+      child.stdin.end();
+    } else {
+      child.stdin.end(JSON.stringify(input));
+    }
+  });
+
+const readPullRequestMetadata = async (repoRoot, pullRequest) =>
+  JSON.parse(
+    await ghApi(repoRoot, [
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}`,
+    ]),
+  );
+
+const readPullRequestFiles = async (repoRoot, pullRequest) => {
+  const pages = JSON.parse(
+    await ghApi(repoRoot, [
+      '--paginate',
+      '--slurp',
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/files?per_page=100`,
+    ]),
+  );
+  return pages.flat();
+};
+
+const readPullRequestDiff = async (repoRoot, pullRequest) =>
+  ghApi(repoRoot, [
+    '-H',
+    'Accept: application/vnd.github.v3.diff',
+    `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}`,
+  ]);
+
+const fromGitHubReviewSide = (side) => (side === 'LEFT' ? 'deletions' : 'additions');
+
+const normalizeGitHubReviewComment = (comment) => {
+  const lineNumber = comment.line ?? comment.original_line;
+  if (lineNumber == null || !comment.path || !comment.body) {
+    return null;
+  }
+
+  return {
+    author: {
+      avatarUrl: comment.user?.avatar_url,
+      login: comment.user?.login || 'GitHub user',
+      url: comment.user?.html_url,
+    },
+    body: comment.body,
+    filePath: comment.path,
+    id: `github:${comment.id}`,
+    lineNumber,
+    side: fromGitHubReviewSide(comment.side),
+    submittedAt: comment.created_at,
+    url: comment.html_url,
+  };
+};
+
+const readPullRequestComments = async (repoRoot, pullRequest) => {
+  const pages = JSON.parse(
+    await ghApi(repoRoot, [
+      '--paginate',
+      '--slurp',
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/comments?per_page=100`,
+    ]),
+  );
+  return pages.flat().map(normalizeGitHubReviewComment).filter(Boolean);
+};
+
+const splitPullRequestDiff = (diff) => {
+  const chunks = diff
+    .split(/(?=^diff --git )/m)
+    .map((chunk) => chunk.trimEnd())
+    .filter((chunk) => chunk.startsWith('diff --git '));
+  const map = new Map();
+
+  for (const chunk of chunks) {
+    const newPath = chunk.match(/^\+\+\+\s+b\/(.+)$/m)?.[1];
+    const oldPath = chunk.match(/^---\s+a\/(.+)$/m)?.[1];
+    const renamePath = chunk.match(/^rename to (.+)$/m)?.[1];
+    const path = newPath && newPath !== '/dev/null' ? newPath : renamePath || oldPath;
+    if (path) {
+      map.set(path, `${chunk}\n`);
+    }
+  }
+
+  return map;
+};
+
+const quotePatchPath = (path) => path.replace(/\\/g, '\\\\').replace(/\n/g, '\\n');
+
+const createPatchFromPullRequestFile = (file) => {
+  if (!file.patch) {
+    return '';
+  }
+
+  const oldPath = file.previous_filename || file.filename;
+  const header = [
+    `diff --git a/${quotePatchPath(oldPath)} b/${quotePatchPath(file.filename)}`,
+    file.status === 'added' ? '--- /dev/null' : `--- a/${quotePatchPath(oldPath)}`,
+    file.status === 'removed' ? '+++ /dev/null' : `+++ b/${quotePatchPath(file.filename)}`,
+  ];
+
+  return `${header.join('\n')}\n${file.patch}\n`;
+};
+
+const normalizePullRequestFileStatus = (status) =>
+  status === 'added'
+    ? 'added'
+    : status === 'removed'
+      ? 'deleted'
+      : status === 'renamed'
+        ? 'renamed'
+        : 'modified';
+
+const createPullRequestSource = (pullRequest, metadata) => ({
+  headSha: metadata.head?.sha,
+  number: pullRequest.number,
+  owner: pullRequest.owner,
+  repo: pullRequest.repo,
+  title: metadata.title,
+  type: 'pull-request',
+  url: pullRequest.url,
+});
+
+const readPullRequestState = async (launchPath, source) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(source.url);
+  await assertPullRequestMatchesRepository(repoRoot, pullRequest);
+
+  const [metadata, apiFiles, diff, reviewComments] = await Promise.all([
+    readPullRequestMetadata(repoRoot, pullRequest),
+    readPullRequestFiles(repoRoot, pullRequest),
+    readPullRequestDiff(repoRoot, pullRequest),
+    readPullRequestComments(repoRoot, pullRequest),
+  ]);
+  const diffByPath = splitPullRequestDiff(diff);
+
+  const files = [...apiFiles]
+    .sort((left, right) => left.filename.localeCompare(right.filename))
+    .map((file) => {
+      const patch = diffByPath.get(file.filename) || createPatchFromPullRequestFile(file);
+      const binary = !patch || /Binary files .* differ/.test(patch);
+
+      return {
+        fingerprint: getFingerprint(
+          `${metadata.head?.sha || ''}\n${file.status}\n${file.previous_filename || ''}\n${
+            file.filename
+          }\n${patch}`,
+        ),
+        oldPath: file.previous_filename,
+        path: file.filename,
+        sections: [
+          {
+            binary,
+            id: `${file.filename}:pull-request:${pullRequest.number}`,
+            kind: 'pull-request',
+            loadState: binary ? 'binary' : 'ready',
+            patch,
+            summary: binary
+              ? createSummary('Binary file changed.', {
+                  canLoad: false,
+                })
+              : undefined,
+          },
+        ],
+        status: normalizePullRequestFileStatus(file.status),
+      };
+    });
+
+  return {
+    files,
+    generatedAt: Date.now(),
+    launchPath,
+    reviewComments,
+    root: repoRoot,
+    source: createPullRequestSource(pullRequest, metadata),
+  };
+};
+
+const toGitHubReviewSide = (side) => (side === 'deletions' ? 'LEFT' : 'RIGHT');
+
+const normalizePullRequestComment = (comment) => ({
+  body: comment.body,
+  line: comment.lineNumber,
+  path: comment.filePath,
+  side: toGitHubReviewSide(comment.side),
+});
+
+const submitPullRequestComment = async (launchPath, request) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(request.source.url);
+  await assertPullRequestMatchesRepository(repoRoot, pullRequest);
+
+  const metadata = await readPullRequestMetadata(repoRoot, pullRequest);
+  const payload = {
+    ...normalizePullRequestComment(request.comment),
+    commit_id: metadata.head?.sha,
+  };
+
+  const rawComment = await ghApi(
+    repoRoot,
+    [
+      '-X',
+      'POST',
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/comments`,
+      '--input',
+      '-',
+    ],
+    payload,
+  );
+  const comment = normalizeGitHubReviewComment(JSON.parse(rawComment));
+  if (!comment) {
+    throw new Error('GitHub accepted the comment but did not return line metadata.');
+  }
+  return comment;
+};
+
+const submitPullRequestReview = async (launchPath, request) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(request.source.url);
+  await assertPullRequestMatchesRepository(repoRoot, pullRequest);
+
+  await ghApi(
+    repoRoot,
+    [
+      '-X',
+      'POST',
+      `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/${pullRequest.number}/reviews`,
+      '--input',
+      '-',
+    ],
+    {
+      body:
+        request.body ||
+        (request.event === 'REQUEST_CHANGES' && request.comments.length === 0
+          ? 'Requesting changes.'
+          : ''),
+      comments: request.comments.map(normalizePullRequestComment),
+      event: request.event,
+    },
+  );
+};
+
 const parseCommitNameStatus = (raw) => {
   const parts = raw.split('\0').filter(Boolean);
   const files = [];
@@ -839,9 +1186,11 @@ const readCommitState = async (launchPath, ref) => {
 };
 
 const readRepositoryState = async (launchPath, source = { type: 'working-tree' }) =>
-  source.type === 'commit'
-    ? readCommitState(launchPath, source.ref)
-    : readWorkingTreeState(launchPath);
+  source.type === 'pull-request'
+    ? readPullRequestState(launchPath, source)
+    : source.type === 'commit'
+      ? readCommitState(launchPath, source.ref)
+      : readWorkingTreeState(launchPath);
 
 const listRepositoryHistory = async (launchPath, limit = 200) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
@@ -875,11 +1224,15 @@ const listRepositoryHistory = async (launchPath, limit = 200) => {
 module.exports = {
   listRepositoryHistory,
   parseStatus,
+  parseGitHubPullRequestUrl,
   readDiffSectionContent,
   readGitIdentity,
   readRepositoryChangeSignature,
   readCommitState,
+  readPullRequestState,
   readRepositoryState,
   readWorkingTreeState,
+  submitPullRequestComment,
+  submitPullRequestReview,
   validateRepositoryPath,
 };

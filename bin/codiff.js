@@ -10,7 +10,9 @@ import { parseArguments } from './arguments.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const run = () => {
-  const { commitRef, requestedPath, walkthrough } = parseArguments(process.argv.slice(2));
+  const { commitRef, pullRequestUrl, requestedPath, walkthrough } = parseArguments(
+    process.argv.slice(2),
+  );
 
   if (!existsSync(resolve(root, 'dist/index.html')) && !process.env.ELECTRON_RENDERER_URL) {
     console.error('Codiff has not been built yet. Run `pnpm build` first.');
@@ -21,6 +23,7 @@ const run = () => {
     env: {
       ...process.env,
       CODIFF_COMMIT_REF: commitRef ?? '',
+      CODIFF_PULL_REQUEST_URL: pullRequestUrl ?? '',
       CODIFF_REPOSITORY_PATH: requestedPath,
       CODIFF_WALKTHROUGH: walkthrough ? '1' : '',
     },

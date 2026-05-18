@@ -28,4 +28,8 @@ contextBridge.exposeInMainWorld('codiff', {
   },
   openFile: (path) => ipcRenderer.invoke('codiff:openFile', path),
   showInFolder: (path) => ipcRenderer.invoke('codiff:showInFolder', path),
+  submitPullRequestComment: (request) =>
+    ipcRenderer.invoke('codiff:submitPullRequestComment', request),
+  submitPullRequestReview: (request) =>
+    ipcRenderer.invoke('codiff:submitPullRequestReview', request),
 });
