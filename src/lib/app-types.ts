@@ -15,7 +15,9 @@ export type ReviewCommentAnnotationMetadata = {
 type MarkdownPreviewAnnotationMetadata = {
   addedLines: ReadonlySet<number>;
   contents: string;
+  layoutKey: string;
   path: string;
+  sectionId: string;
   type: 'markdown-preview';
 };
 

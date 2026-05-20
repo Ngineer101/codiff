@@ -10,6 +10,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -195,10 +196,20 @@ const getAddedLinesDigest = (lines: ReadonlySet<number>) =>
 function MarkdownPreview({
   addedLines,
   contents,
+  layoutKey,
+  onLayoutReady,
+  sectionId,
 }: {
   addedLines: ReadonlySet<number>;
   contents: string;
+  layoutKey: string;
+  onLayoutReady: (sectionId: string) => void;
+  sectionId: string;
 }) {
+  useLayoutEffect(() => {
+    onLayoutReady(sectionId);
+  }, [layoutKey, onLayoutReady, sectionId]);
+
   return (
     <div className="codiff-markdown-preview">
       {renderMarkdown(contents, { addedLines, highlightCode: true })}
@@ -450,6 +461,11 @@ export function ReviewCodeView({
   const [markdownPreviewSections, setMarkdownPreviewSections] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Markdown preview content is rendered through a CodeView annotation portal.
+  // Bump the item version once the portal DOM exists so CodeView measures the real preview height.
+  const [markdownPreviewLayoutPassBySection, setMarkdownPreviewLayoutPassBySection] = useState<
+    Readonly<Record<string, number>>
+  >({});
   const [selectedLines, setSelectedLines] = useState<CodeViewLineSelection | null>(null);
   const stickyHeaderFrameRef = useRef<number | null>(null);
   const commentsBySection = useMemo(() => {
@@ -461,6 +477,13 @@ export function ReviewCodeView({
     }
     return map;
   }, [comments]);
+
+  const markMarkdownPreviewLayoutReady = useCallback((sectionId: string) => {
+    setMarkdownPreviewLayoutPassBySection((current) => ({
+      ...current,
+      [sectionId]: (current[sectionId] ?? 0) + 1,
+    }));
+  }, []);
 
   const { firstItemByPath, itemMetadata, items } = useMemo(() => {
     const nextItems: Array<CodeViewItem<ReviewAnnotationMetadata>> = [];
@@ -518,6 +541,7 @@ export function ReviewCodeView({
         nextFirstItemByPath.set(file.path, nextFirstItemByPath.get(file.path) ?? id);
         if (isMarkdownPreview) {
           const markdownPreviewAddedLinesDigest = getAddedLinesDigest(markdownPreview.addedLines);
+          const markdownPreviewLayoutKey = `${section.id}:${markdownPreview.contents.length}:${markdownPreviewAddedLinesDigest}`;
           nextItems.push({
             annotations: [
               {
@@ -525,7 +549,9 @@ export function ReviewCodeView({
                 metadata: {
                   addedLines: markdownPreview.addedLines,
                   contents: markdownPreview.contents,
+                  layoutKey: markdownPreviewLayoutKey,
                   path: file.path,
+                  sectionId: section.id,
                   type: 'markdown-preview',
                 },
               } satisfies LineAnnotation<ReviewAnnotationMetadata>,
@@ -546,8 +572,8 @@ export function ReviewCodeView({
                 isCollapsed ? 'collapsed' : 'open'
               }:${isViewed ? 'viewed' : 'pending'}:${index}:${
                 selectedPath === file.path ? 'selected' : 'idle'
-              }:${walkthroughNotes.get(file.path)?.reason ?? ''}:${markdownPreview.contents.length}:${
-                markdownPreviewAddedLinesDigest
+              }:${walkthroughNotes.get(file.path)?.reason ?? ''}:${markdownPreviewLayoutKey}:${
+                markdownPreviewLayoutPassBySection[section.id] ?? 0
               }`,
             ),
           });
@@ -583,6 +609,7 @@ export function ReviewCodeView({
     files,
     forceExpandedPaths,
     itemVersionByPath,
+    markdownPreviewLayoutPassBySection,
     markdownPreviewSections,
     selectedPath,
     showWhitespace,
@@ -877,6 +904,9 @@ export function ReviewCodeView({
           <MarkdownPreview
             addedLines={annotation.metadata.addedLines}
             contents={annotation.metadata.contents}
+            layoutKey={annotation.metadata.layoutKey}
+            onLayoutReady={markMarkdownPreviewLayoutReady}
+            sectionId={annotation.metadata.sectionId}
           />
         );
       }
@@ -907,6 +937,7 @@ export function ReviewCodeView({
       gitIdentity,
       highlightCommentLines,
       isPullRequest,
+      markMarkdownPreviewLayoutReady,
       onAskCodex,
       onSubmitComment,
       onUpdateComment,
