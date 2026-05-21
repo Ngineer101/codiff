@@ -2,7 +2,7 @@
 
 Codiff is a beautiful, minimal, local diff viewer for reviewing staged and unstaged Git changes before committing.
 
-<img width="2824" height="1856" src="https://github.com/user-attachments/assets/176e4a43-1dcb-4962-8343-5d08f5cd724" />
+<img width="2824" height="1856" src="https://github.com/user-attachments/assets/b8cd9b57-cb7a-4d7f-8a61-9ef7f40fa6b8" />
 
 ## Why Codiff
 
