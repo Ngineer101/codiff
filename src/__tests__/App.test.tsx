@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, test } from 'vite-plus/test';
 import { getDiffSearchResult } from '../lib/diff-search.ts';
 import {
+  canRenderImagePreview,
   getDiffLineCount,
   getMarkdownPreviewContents,
   getTotalDiffLineCount,
@@ -231,6 +232,36 @@ test('diff line counts omit binary summary rows', () => {
     countable: false,
     deletions: 0,
   });
+});
+
+test('image previews include deferred image sections', () => {
+  expect(
+    canRenderImagePreview('screenshot.png', {
+      binary: false,
+      id: 'screenshot.png:unstaged',
+      kind: 'unstaged',
+      loadState: 'deferred',
+      patch: '',
+    }),
+  ).toBe(true);
+  expect(
+    canRenderImagePreview('large.jpg', {
+      binary: false,
+      id: 'large.jpg:unstaged',
+      kind: 'unstaged',
+      loadState: 'too-large',
+      patch: '',
+    }),
+  ).toBe(true);
+  expect(
+    canRenderImagePreview('large.txt', {
+      binary: false,
+      id: 'large.txt:unstaged',
+      kind: 'unstaged',
+      loadState: 'deferred',
+      patch: '',
+    }),
+  ).toBe(false);
 });
 
 test('total diff line counts sum countable files only', () => {

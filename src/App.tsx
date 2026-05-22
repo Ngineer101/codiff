@@ -1887,6 +1887,7 @@ export default function App() {
             searchQuery={diffSearchQuery}
             selectedPath={visibleSelectedPath}
             showWhitespace={showWhitespace}
+            source={state.source}
             viewed={viewed}
             walkthroughNotes={
               sidebarMode === 'walkthrough' ? walkthroughNotes : emptyWalkthroughNotes

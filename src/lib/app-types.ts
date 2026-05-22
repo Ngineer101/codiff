@@ -24,7 +24,14 @@ type MarkdownPreviewAnnotationMetadata = {
   type: 'markdown-preview';
 };
 
+type ImagePreviewAnnotationMetadata = {
+  path: string;
+  sectionId: string;
+  type: 'image-preview';
+};
+
 export type ReviewAnnotationMetadata =
+  | ImagePreviewAnnotationMetadata
   | MarkdownPreviewAnnotationMetadata
   | ReviewCommentAnnotationMetadata;
 

@@ -1137,6 +1137,212 @@
   padding: 6px 10px;
 }
 
+.codiff-image-preview {
+  box-sizing: border-box;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  font: 13px/1.4 var(--font-sans);
+  gap: 12px;
+  min-inline-size: 0;
+  padding: 16px;
+  white-space: normal;
+  width: 100%;
+}
+
+.codiff-image-preview-item [data-column-number],
+.codiff-image-preview-item [data-gutter-buffer='annotation'],
+.codiff-image-preview-item [data-content] > [data-line] {
+  display: none;
+}
+
+.codiff-image-preview-item [data-code] {
+  padding-block: 0;
+}
+
+.codiff-image-preview-message {
+  align-items: center;
+  color: var(--muted);
+  flex-direction: row;
+  min-height: 120px;
+}
+
+.codiff-image-preview-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.codiff-image-preview-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.codiff-image-preview-mode {
+  background: rgb(127 127 127 / 0.09);
+  border: 1px solid rgb(127 127 127 / 0.15);
+  border-radius: 8px;
+  corner-shape: squircle;
+  display: inline-flex;
+  padding: 2px;
+}
+
+.codiff-image-preview-mode button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  corner-shape: squircle;
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.codiff-image-preview-mode button:hover,
+.codiff-image-preview-mode button.active {
+  background: var(--file-bg);
+  color: var(--text);
+}
+
+.codiff-image-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  min-width: 0;
+}
+
+.codiff-image-grid figure {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.codiff-image-frame,
+.codiff-image-slider-stage {
+  background:
+    linear-gradient(45deg, rgb(127 127 127 / 0.1) 25%, transparent 25%),
+    linear-gradient(-45deg, rgb(127 127 127 / 0.1) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgb(127 127 127 / 0.1) 75%),
+    linear-gradient(-45deg, transparent 75%, rgb(127 127 127 / 0.1) 75%);
+  background-color: color-mix(in srgb, var(--code-bg) 88%, var(--text) 4%);
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+  border: 1px solid var(--file-border);
+  border-radius: 8px;
+  corner-shape: squircle;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+.codiff-image-frame {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+
+.codiff-image-frame img {
+  display: block;
+  max-height: min(62vh, 720px);
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.codiff-image-grid figcaption {
+  color: var(--muted);
+  display: flex;
+  font: 12px/1.2 var(--font-mono);
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.codiff-image-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.codiff-image-slider-stage {
+  --codiff-image-split: 50%;
+
+  aspect-ratio: 16 / 9;
+  max-height: min(68vh, 760px);
+  min-height: 260px;
+  position: relative;
+}
+
+.codiff-image-slider-stage img {
+  display: block;
+  height: 100%;
+  inset: 0;
+  object-fit: contain;
+  position: absolute;
+  width: 100%;
+}
+
+.codiff-image-slider-new {
+  clip-path: inset(0 calc(100% - var(--codiff-image-split)) 0 0);
+}
+
+.codiff-image-slider-divider {
+  bottom: 0;
+  cursor: ew-resize;
+  left: var(--codiff-image-split);
+  outline: none;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  touch-action: none;
+  width: 28px;
+}
+
+.codiff-image-slider-divider::before {
+  background: color-mix(in srgb, var(--tree-selection-focus) 82%, white 18%);
+  bottom: 0;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.38);
+  content: '';
+  left: 50%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-1px);
+  width: 2px;
+}
+
+.codiff-image-slider-divider::after {
+  background: var(--tree-selection-focus);
+  border: 2px solid var(--code-bg);
+  border-radius: 999px;
+  box-shadow: 0 8px 22px -14px rgb(0 0 0 / 0.82);
+  content: '';
+  height: 18px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+}
+
+.codiff-image-slider-divider:focus-visible::after {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--tree-selection-focus) 34%, transparent),
+    0 8px 22px -14px rgb(0 0 0 / 0.82);
+}
+
 .codiff-file-header {
   -webkit-app-region: no-drag;
   -webkit-backdrop-filter: blur(4px) saturate(1.18);

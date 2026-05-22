@@ -12,12 +12,14 @@ const {
   git,
   gitBufferWithInput,
   normalizeStatus,
+  readGitImageFile,
   summarizeContent,
   validateRepositoryPath,
 } = require('./common.cjs');
 
 /**
  * @typedef {import('../../src/types.ts').ChangedFile} ChangedFile
+ * @typedef {import('../../src/types.ts').DiffImageContentResult} DiffImageContentResult
  * @typedef {import('../../src/types.ts').RepositoryState} RepositoryState
  * @typedef {import('./common.cjs').StatusItem} StatusItem
  */
@@ -531,6 +533,49 @@ const readCommitSectionContent = async (launchPath, ref, requestedPath, options 
   return createCommitSection(commit, item, oldFile, newFile, patch);
 };
 
+/**
+ * @param {string} launchPath
+ * @param {string} ref
+ * @param {string} requestedPath
+ * @returns {Promise<DiffImageContentResult>}
+ */
+const readCommitImageContent = async (launchPath, ref, requestedPath) => {
+  try {
+    const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+    const path = validateRepositoryPath(requestedPath);
+    const commit = (await git(repoRoot, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
+    const [firstParent] = await readCommitParents(repoRoot, commit);
+    const status = await readCommitNameStatus(repoRoot, commit, firstParent, { sort: false });
+    const item = status.find((candidate) => candidate.path === path);
+    if (!item) {
+      throw new Error('File is not part of this commit.');
+    }
+
+    const [oldImage, newImage] = await Promise.all([
+      firstParent ? readGitImageFile(repoRoot, firstParent, item.oldPath || item.path) : undefined,
+      readGitImageFile(repoRoot, commit, item.path),
+    ]);
+
+    if (!oldImage && !newImage) {
+      return {
+        reason: 'Codiff could not load either side of this image.',
+        status: 'unavailable',
+      };
+    }
+
+    return {
+      ...(newImage ? { newImage } : {}),
+      ...(oldImage ? { oldImage } : {}),
+      status: 'ready',
+    };
+  } catch (error) {
+    return {
+      reason: error instanceof Error ? error.message : 'Codiff could not load this image.',
+      status: 'unavailable',
+    };
+  }
+};
+
 /** @param {string} launchPath @param {ReviewSource} [source] @returns {Promise<RepositoryState>} */
 const readRepositoryState = async (launchPath, source = { type: 'working-tree' }) =>
   source.type === 'pull-request'
@@ -587,6 +632,7 @@ const listRepositoryHistory = async (launchPath, limit = 200) => {
 module.exports = {
   listRepositoryHistory,
   parseCommitNameStatus,
+  readCommitImageContent,
   readCommitSectionContent,
   readCommitState,
 };

@@ -1,19 +1,32 @@
 // @ts-check
 
 const { spawn } = require('node:child_process');
-const { createSummary, getFingerprint, git, gitOrEmpty } = require('./common.cjs');
+const {
+  IMAGE_FILE_LIMIT,
+  bufferToImageRevision,
+  createSummary,
+  formatBytes,
+  getFingerprint,
+  getImageMimeType,
+  git,
+  gitOrEmpty,
+  validateRepositoryPath,
+} = require('./common.cjs');
 
 /**
  * @typedef {import('../../src/types.ts').ChangedFile} ChangedFile
+ * @typedef {import('../../src/types.ts').DiffImageContentResult} DiffImageContentResult
  * @typedef {import('../../src/types.ts').PullRequestReviewComment} PullRequestReviewComment
  * @typedef {import('../../src/types.ts').RepositoryState} RepositoryState
  * @typedef {import('../../src/types.ts').ReviewSource} ReviewSource
  * @typedef {import('../../src/types.ts').SubmitPullRequestCommentRequest} SubmitPullRequestCommentRequest
  * @typedef {import('../../src/types.ts').SubmitPullRequestReviewRequest} SubmitPullRequestReviewRequest
+ * @typedef {{owner: string; repo: string}} GitHubRepositoryReference
+ * @typedef {{full_name?: string; name?: string; owner?: {login?: string}}} GitHubRepositoryMetadata
  * @typedef {{number: number; owner: string; repo: string; url: string}} PullRequestReference
  * @typedef {{direction: 'fetch' | 'push'; name: string; owner: string; repo: string}} GitHubRemote
  * @typedef {{filename: string; patch?: string; previous_filename?: string; status: string}} GitHubPullRequestFile
- * @typedef {{base?: {ref?: string; sha?: string}; head?: {sha?: string}; title?: string}} GitHubPullRequestMetadata
+ * @typedef {{base?: {ref?: string; repo?: GitHubRepositoryMetadata | null; sha?: string}; head?: {ref?: string; repo?: GitHubRepositoryMetadata | null; sha?: string}; title?: string}} GitHubPullRequestMetadata
  * @typedef {{author?: {avatar_url?: string}; commit?: {author?: {date?: string; email?: string; name?: string}; message?: string}; parents?: ReadonlyArray<{sha?: string}>; sha?: string}} GitHubCommit
  * @typedef {{[key: string]: any}} GitHubReviewComment
  */
@@ -182,6 +195,41 @@ const ghApi = (repoRoot, args, input) =>
     }
   });
 
+/**
+ * @param {string} repoRoot
+ * @param {ReadonlyArray<string>} args
+ * @returns {Promise<Buffer | undefined>}
+ */
+const ghApiBuffer = (repoRoot, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn('gh', ['api', ...args], {
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    /** @type {Array<Buffer>} */
+    const stdout = [];
+    /** @type {Array<Buffer>} */
+    const stderr = [];
+
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout));
+        return;
+      }
+
+      const errorOutput = Buffer.concat(stderr).toString('utf8');
+      if (code === 1 && /not found|404/i.test(errorOutput)) {
+        resolve(undefined);
+        return;
+      }
+
+      reject(new Error(errorOutput.trim() || `gh api exited with code ${code}.`));
+    });
+  });
+
 /** @param {string} repoRoot @param {PullRequestReference} pullRequest @returns {Promise<GitHubPullRequestMetadata>} */
 const readPullRequestMetadata = async (repoRoot, pullRequest) =>
   JSON.parse(
@@ -200,6 +248,68 @@ const readPullRequestFiles = async (repoRoot, pullRequest) => {
     ]),
   );
   return pages.flat();
+};
+
+/** @param {string} path */
+const encodeGitHubContentPath = (path) => path.split('/').map(encodeURIComponent).join('/');
+
+/** @param {GitHubRepositoryMetadata | null | undefined} repository */
+const normalizeGitHubRepositoryReference = (repository) => {
+  const owner = repository?.owner?.login;
+  const repo = repository?.name;
+  if (owner && repo) {
+    return { owner, repo };
+  }
+
+  const [fullNameOwner, fullNameRepo] = repository?.full_name?.split('/') ?? [];
+  return fullNameOwner && fullNameRepo
+    ? {
+        owner: fullNameOwner,
+        repo: fullNameRepo,
+      }
+    : null;
+};
+
+/** @param {PullRequestReference} pullRequest @param {GitHubPullRequestMetadata} metadata */
+const getPullRequestHeadImageSource = (pullRequest, metadata) => {
+  const repository = normalizeGitHubRepositoryReference(metadata.head?.repo);
+  return {
+    owner: repository?.owner ?? pullRequest.owner,
+    ref: repository
+      ? (metadata.head?.sha ?? metadata.head?.ref ?? 'HEAD')
+      : `refs/pull/${pullRequest.number}/head`,
+    repo: repository?.repo ?? pullRequest.repo,
+  };
+};
+
+/**
+ * @param {string} repoRoot
+ * @param {GitHubRepositoryReference} repository
+ * @param {string} ref
+ * @param {string} path
+ */
+const readGitHubImageFile = async (repoRoot, repository, ref, path) => {
+  if (!getImageMimeType(path)) {
+    throw new Error('Unsupported image file type.');
+  }
+
+  const buffer = await ghApiBuffer(repoRoot, [
+    '-H',
+    'Accept: application/vnd.github.raw',
+    `repos/${repository.owner}/${repository.repo}/contents/${encodeGitHubContentPath(
+      path,
+    )}?ref=${encodeURIComponent(ref)}`,
+  ]);
+
+  if (!buffer) {
+    return undefined;
+  }
+
+  if (buffer.length > IMAGE_FILE_LIMIT) {
+    throw new Error(`Image is ${formatBytes(buffer.length)}, so Codiff skipped rendering it.`);
+  }
+
+  return bufferToImageRevision(path, buffer);
 };
 
 /** @param {string} repoRoot @param {PullRequestReference} pullRequest */
@@ -458,6 +568,61 @@ const readPullRequestState = async (launchPath, source) => {
   };
 };
 
+/**
+ * @param {string} launchPath
+ * @param {Extract<ReviewSource, {type: 'pull-request'}>} source
+ * @param {string} requestedPath
+ * @returns {Promise<DiffImageContentResult>}
+ */
+const readPullRequestImageContent = async (launchPath, source, requestedPath) => {
+  try {
+    const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+    const path = validateRepositoryPath(requestedPath);
+    const pullRequest = parseGitHubPullRequestUrl(source.url);
+    await assertPullRequestMatchesRepository(repoRoot, pullRequest);
+
+    const [metadata, files] = await Promise.all([
+      readPullRequestMetadata(repoRoot, pullRequest),
+      readPullRequestFiles(repoRoot, pullRequest),
+    ]);
+    const file = files.find((candidate) => candidate.filename === path);
+    if (!file) {
+      throw new Error('File is not part of this pull request.');
+    }
+
+    const headImageSource = getPullRequestHeadImageSource(pullRequest, metadata);
+    const [oldImage, newImage] = await Promise.all([
+      metadata.base?.sha
+        ? readGitHubImageFile(
+            repoRoot,
+            pullRequest,
+            metadata.base.sha,
+            file.previous_filename || file.filename,
+          )
+        : undefined,
+      readGitHubImageFile(repoRoot, headImageSource, headImageSource.ref, file.filename),
+    ]);
+
+    if (!oldImage && !newImage) {
+      return {
+        reason: 'Codiff could not load either side of this image.',
+        status: 'unavailable',
+      };
+    }
+
+    return {
+      ...(newImage ? { newImage } : {}),
+      ...(oldImage ? { oldImage } : {}),
+      status: 'ready',
+    };
+  } catch (error) {
+    return {
+      reason: error instanceof Error ? error.message : 'Codiff could not load this image.',
+      status: 'unavailable',
+    };
+  }
+};
+
 /** @param {PullRequestReviewComment['side']} side */
 const toGitHubReviewSide = (side) => (side === 'deletions' ? 'LEFT' : 'RIGHT');
 
@@ -542,12 +707,14 @@ module.exports = {
   createPatchFromPullRequestFile,
   createPullRequestHistoryFetchRefspecs,
   createPullRequestSource,
+  getPullRequestHeadImageSource,
   listPullRequestHistory,
   normalizeGitHubCommit,
   normalizeGitHubPullRequestCommit,
   normalizeGitHubReviewComment,
   normalizePullRequestComment,
   parseGitHubPullRequestUrl,
+  readPullRequestImageContent,
   readPullRequestState,
   submitPullRequestComment,
   submitPullRequestReview,

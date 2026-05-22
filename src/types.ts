@@ -168,6 +168,30 @@ export type DiffSectionContentRequest = {
   source?: ReviewSource;
 };
 
+export type DiffImageContentRequest = {
+  kind: DiffSection['kind'];
+  path: string;
+  source?: ReviewSource;
+};
+
+export type DiffImageRevision = {
+  dataUrl: string;
+  mimeType: string;
+  name: string;
+  size: number;
+};
+
+export type DiffImageContentResult =
+  | {
+      newImage?: DiffImageRevision;
+      oldImage?: DiffImageRevision;
+      status: 'ready';
+    }
+  | {
+      reason: string;
+      status: 'unavailable';
+    };
+
 export type CodiffTheme = 'system' | 'light' | 'dark';
 
 export type CodiffPreferences = {

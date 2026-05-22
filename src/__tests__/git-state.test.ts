@@ -26,6 +26,16 @@ type GitStateModule = {
     pullRequest: { number: number; owner: string; repo: string; url: string },
     metadata: { base?: { ref?: string; sha?: string } },
   ) => ReadonlyArray<string>;
+  getPullRequestHeadImageSource: (
+    pullRequest: { number: number; owner: string; repo: string; url: string },
+    metadata: {
+      head?: {
+        ref?: string;
+        repo?: { full_name?: string; name?: string; owner?: { login?: string } } | null;
+        sha?: string;
+      };
+    },
+  ) => { owner: string; ref: string; repo: string };
   listRepositoryHistory: (
     launchPath: string,
     limit?: number,
@@ -55,6 +65,7 @@ const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
 const {
   createPullRequestHistoryFetchRefspecs,
+  getPullRequestHeadImageSource,
   listRepositoryHistory,
   normalizeGitHubPullRequestCommit,
   normalizeGitHubReviewComment,
@@ -145,6 +156,56 @@ test('createPullRequestHistoryFetchRefspecs fetches PR and base refs into Codiff
     '+refs/pull/25/head:refs/codiff/pull-requests/25/head',
     '+refs/heads/main:refs/codiff/pull-requests/25/base',
   ]);
+});
+
+test('getPullRequestHeadImageSource uses fork repository metadata', () => {
+  expect(
+    getPullRequestHeadImageSource(
+      {
+        number: 25,
+        owner: 'base-owner',
+        repo: 'base-repo',
+        url: 'https://github.com/base-owner/base-repo/pull/25',
+      },
+      {
+        head: {
+          repo: {
+            name: 'fork-repo',
+            owner: {
+              login: 'fork-owner',
+            },
+          },
+          sha: 'fork-head-sha',
+        },
+      },
+    ),
+  ).toEqual({
+    owner: 'fork-owner',
+    ref: 'fork-head-sha',
+    repo: 'fork-repo',
+  });
+});
+
+test('getPullRequestHeadImageSource falls back to the base repository PR head ref', () => {
+  expect(
+    getPullRequestHeadImageSource(
+      {
+        number: 25,
+        owner: 'base-owner',
+        repo: 'base-repo',
+        url: 'https://github.com/base-owner/base-repo/pull/25',
+      },
+      {
+        head: {
+          sha: 'fork-head-sha',
+        },
+      },
+    ),
+  ).toEqual({
+    owner: 'base-owner',
+    ref: 'refs/pull/25/head',
+    repo: 'base-repo',
+  });
 });
 
 test('normalizeGitHubReviewComment preserves multi-line ranges', () => {

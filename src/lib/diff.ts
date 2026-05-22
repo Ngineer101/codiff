@@ -6,6 +6,13 @@ export const getItemId = (section: DiffSection) => `diff:${section.id}`;
 
 const isMarkdownFilePath = (path: string) => /\.md$/i.test(path);
 
+export const isImageFilePath = (path: string) =>
+  /\.(?:apng|avif|bmp|gif|ico|jpe?g|png|webp)$/i.test(path);
+
+export const canRenderImagePreview = (path: string, section: DiffSection) =>
+  isImageFilePath(path) &&
+  (section.binary || section.loadState === 'deferred' || section.loadState === 'too-large');
+
 const joinDiffLines = (lines: ReadonlyArray<string>) =>
   lines.some((line) => line.includes('\n')) ? lines.join('') : lines.join('\n');
 

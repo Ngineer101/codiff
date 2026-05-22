@@ -14,11 +14,16 @@ const {
   MAX_UNTRACKED_INITIAL_ITEMS,
   parseStatus,
   readFileStat,
+  readGitImageFile,
+  readIndexImageFile,
+  readWorkingTreeImageFile,
   validateRepositoryPath,
 } = require('./common.cjs');
 
 /**
  * @typedef {import('../../src/types.ts').ChangedFile} ChangedFile
+ * @typedef {import('../../src/types.ts').DiffImageContentRequest} DiffImageContentRequest
+ * @typedef {import('../../src/types.ts').DiffImageContentResult} DiffImageContentResult
  * @typedef {import('../../src/types.ts').DiffSection} DiffSection
  * @typedef {import('../../src/types.ts').DiffSectionContentRequest} DiffSectionContentRequest
  * @typedef {import('../../src/types.ts').RepositoryState} RepositoryState
@@ -315,6 +320,52 @@ const readDiffSectionContent = async (launchPath, request) => {
   });
 };
 
+/**
+ * @param {string} launchPath
+ * @param {DiffImageContentRequest} request
+ * @returns {Promise<DiffImageContentResult>}
+ */
+const readDiffImageContent = async (launchPath, request) => {
+  try {
+    const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+    const path = validateRepositoryPath(request.path);
+    if (request.kind === 'commit' || request.source?.type === 'commit') {
+      throw new Error('Commit image diffs are loaded through the commit reader.');
+    }
+
+    const item = await getStatusItemForPath(repoRoot, path);
+    const oldPath = item.oldPath || item.path;
+    const [oldImage, newImage] =
+      request.kind === 'staged'
+        ? await Promise.all([
+            readGitImageFile(repoRoot, 'HEAD', oldPath),
+            readIndexImageFile(repoRoot, item.path),
+          ])
+        : await Promise.all([
+            item.untracked ? undefined : readIndexImageFile(repoRoot, oldPath),
+            readWorkingTreeImageFile(repoRoot, item.path),
+          ]);
+
+    if (!oldImage && !newImage) {
+      return {
+        reason: 'Codiff could not load either side of this image.',
+        status: 'unavailable',
+      };
+    }
+
+    return {
+      ...(newImage ? { newImage } : {}),
+      ...(oldImage ? { oldImage } : {}),
+      status: 'ready',
+    };
+  } catch (error) {
+    return {
+      reason: error instanceof Error ? error.message : 'Codiff could not load this image.',
+      status: 'unavailable',
+    };
+  }
+};
+
 /** @param {string} repoRoot @param {string} path */
 const readWorkingTreePathSignature = async (repoRoot, path) => {
   try {
@@ -412,6 +463,7 @@ module.exports = {
   getStatusItemForPath,
   listUntrackedItems,
   readDiffSectionContent,
+  readDiffImageContent,
   readGitIdentity,
   readRepositoryChangeSignature,
   readWorkingTreeState,

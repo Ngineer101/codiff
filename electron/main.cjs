@@ -17,8 +17,9 @@ const {
 const squirrelStartup = require('electron-squirrel-startup');
 const {
   listRepositoryHistory,
-  readGitIdentity,
+  readDiffImageContent,
   readDiffSectionContent,
+  readGitIdentity,
   readRepositoryChangeSignature,
   readRepositoryState,
   submitPullRequestComment,
@@ -680,6 +681,11 @@ ipcMain.handle('codiff:submitPullRequestReview', async (event, request) => {
 ipcMain.handle('codiff:getDiffSectionContent', async (event, request) => {
   const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
   return readDiffSectionContent(repositoryPath, request);
+});
+
+ipcMain.handle('codiff:getDiffImageContent', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return readDiffImageContent(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:getRepositoryHistory', async (event, limit, source) => {

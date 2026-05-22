@@ -7,6 +7,7 @@ const codiff = {
   askReviewAssistant: (request) => ipcRenderer.invoke('codiff:askReviewAssistant', request),
   getConfig: () => ipcRenderer.invoke('codiff:getConfig'),
   getDiffSectionContent: (request) => ipcRenderer.invoke('codiff:getDiffSectionContent', request),
+  getDiffImageContent: (request) => ipcRenderer.invoke('codiff:getDiffImageContent', request),
   getGitIdentity: () => ipcRenderer.invoke('codiff:getGitIdentity'),
   getLaunchOptions: () => ipcRenderer.invoke('codiff:getLaunchOptions'),
   getPreferences: () => ipcRenderer.invoke('codiff:getPreferences'),

@@ -3,22 +3,26 @@
 const { gitOrEmpty, parseStatus, validateRepositoryPath } = require('./git-state/common.cjs');
 const {
   listRepositoryHistory,
+  readCommitImageContent,
   readCommitSectionContent,
   readCommitState,
 } = require('./git-state/commit.cjs');
 const {
   createPullRequestHistoryFetchRefspecs,
+  getPullRequestHeadImageSource,
   listPullRequestHistory,
   normalizeGitHubPullRequestCommit,
   normalizeGitHubReviewComment,
   normalizePullRequestComment,
   parseGitHubPullRequestUrl,
+  readPullRequestImageContent,
   readPullRequestState,
   submitPullRequestComment,
   submitPullRequestReview,
 } = require('./git-state/pull-request.cjs');
 const {
   readDiffSectionContent: readWorkingTreeDiffSectionContent,
+  readDiffImageContent: readWorkingTreeDiffImageContent,
   readGitIdentity,
   readRepositoryChangeSignature,
   readWorkingTreeState,
@@ -26,6 +30,8 @@ const {
 
 /**
  * @typedef {import('../src/types.ts').DiffSectionContentRequest} DiffSectionContentRequest
+ * @typedef {import('../src/types.ts').DiffImageContentRequest} DiffImageContentRequest
+ * @typedef {import('../src/types.ts').DiffImageContentResult} DiffImageContentResult
  * @typedef {import('../src/types.ts').RepositoryHistory} RepositoryHistory
  * @typedef {import('../src/types.ts').RepositoryState} RepositoryState
  * @typedef {import('../src/types.ts').ReviewSource} ReviewSource
@@ -57,8 +63,17 @@ const readDiffSectionContent = async (launchPath, request) =>
       })
     : readWorkingTreeDiffSectionContent(launchPath, request);
 
+/** @param {string} launchPath @param {DiffImageContentRequest} request @returns {Promise<DiffImageContentResult>} */
+const readDiffImageContent = (launchPath, request) =>
+  request.source?.type === 'pull-request'
+    ? readPullRequestImageContent(launchPath, request.source, request.path)
+    : request.kind === 'commit' || request.source?.type === 'commit'
+      ? readCommitImageContent(launchPath, request.source?.ref || 'HEAD', request.path)
+      : readWorkingTreeDiffImageContent(launchPath, request);
+
 module.exports = {
   createPullRequestHistoryFetchRefspecs,
+  getPullRequestHeadImageSource,
   listRepositoryHistory: readRepositoryHistory,
   normalizeGitHubPullRequestCommit,
   normalizeGitHubReviewComment,
@@ -66,6 +81,7 @@ module.exports = {
   parseStatus,
   parseGitHubPullRequestUrl,
   readDiffSectionContent,
+  readDiffImageContent,
   readGitIdentity,
   readRepositoryChangeSignature,
   readCommitState,

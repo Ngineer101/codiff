@@ -1,5 +1,8 @@
 import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import { CheckIcon as Check } from '@phosphor-icons/react/Check';
+import { ColumnsIcon as Columns } from '@phosphor-icons/react/Columns';
+import { ImageBrokenIcon as ImageBroken } from '@phosphor-icons/react/ImageBroken';
+import { SquareSplitVerticalIcon as SquareSplitVertical } from '@phosphor-icons/react/SquareSplitVertical';
 import { XIcon as X } from '@phosphor-icons/react/X';
 import {
   type CodeViewLineSelection,
@@ -18,8 +21,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
 } from 'react';
 import codexIconUrl from '../../assets/codex.svg';
 import { matchesShortcut } from '../../config/keymap.ts';
@@ -47,6 +53,7 @@ import {
   workerHighlighterOptions,
 } from '../../lib/code-view-options.ts';
 import {
+  canRenderImagePreview,
   getDiffLineCountFromVisibleSections,
   getItemId,
   getMarkdownPreviewContents,
@@ -65,9 +72,11 @@ import {
 import { applySearchHighlights } from '../../lib/search-highlights.ts';
 import type {
   ChangedFile,
+  DiffImageContentResult,
   DiffSection,
   GitIdentity,
   PullRequestExistingReviewComment,
+  ReviewSource,
 } from '../../types.ts';
 import { Gravatar } from './Gravatar.tsx';
 import { DiffLineCountBadge } from './Sidebar.tsx';
@@ -262,6 +271,23 @@ const canSubmitCommentToGitHub = (comment: ReviewComment) =>
 const getAddedLinesDigest = (lines: ReadonlySet<number>) =>
   lines.size > 0 ? [...lines].join(',') : '';
 
+const formatBytes = (size: number) => {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  const units = ['KiB', 'MiB', 'GiB'];
+  let value = size / 1024;
+  for (const unit of units) {
+    if (value < 1024 || unit === units.at(-1)) {
+      return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
+    }
+    value /= 1024;
+  }
+
+  return `${size} B`;
+};
+
 function MarkdownPreview({
   addedLines,
   contents,
@@ -282,6 +308,262 @@ function MarkdownPreview({
   return (
     <div className="codiff-markdown-preview">
       {renderMarkdown(contents, { addedLines, highlightCode: true })}
+    </div>
+  );
+}
+
+type ImagePreviewMode = 'side-by-side' | 'slider';
+
+function ImageDiffPreview({
+  file,
+  onLayoutReady,
+  section,
+  source,
+}: {
+  file: ChangedFile;
+  onLayoutReady: (sectionId: string) => void;
+  section: DiffSection;
+  source: ReviewSource;
+}) {
+  const loadingResult: DiffImageContentResult = {
+    reason: 'Loading image...',
+    status: 'unavailable',
+  };
+  const requestKey = `${file.fingerprint}:${section.id}:${JSON.stringify(source)}`;
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const [mode, setMode] = useState<ImagePreviewMode>('slider');
+  const sliderStageRef = useRef<HTMLDivElement>(null);
+  const [loadState, setLoadState] = useState<{
+    requestKey: string | null;
+    result: DiffImageContentResult;
+  }>({
+    requestKey: null,
+    result: loadingResult,
+  });
+  const [split, setSplit] = useState(50);
+  const result = loadState.requestKey === requestKey ? loadState.result : loadingResult;
+
+  const updateSplitFromClientX = useCallback((clientX: number) => {
+    const stage = sliderStageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const rect = stage.getBoundingClientRect();
+    if (rect.width <= 0) {
+      return;
+    }
+
+    setSplit(Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)));
+  }, []);
+
+  const handleDividerPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      updateSplitFromClientX(event.clientX);
+    },
+    [updateSplitFromClientX],
+  );
+
+  const handleDividerPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        updateSplitFromClientX(event.clientX);
+      }
+    },
+    [updateSplitFromClientX],
+  );
+
+  const handleDividerPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const handleDividerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSplit((current) => Math.max(0, current - (event.shiftKey ? 10 : 2)));
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSplit((current) => Math.min(100, current + (event.shiftKey ? 10 : 2)));
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setSplit(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      setSplit(100);
+    }
+  }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    const activeRequestKey = requestKey;
+
+    window.codiff
+      .getDiffImageContent({
+        kind: section.kind,
+        path: file.path,
+        source,
+      })
+      .then((nextResult) => {
+        if (!canceled) {
+          setLoadState({
+            requestKey: activeRequestKey,
+            result: nextResult,
+          });
+        }
+      })
+      .catch(() => {
+        if (!canceled) {
+          setLoadState({
+            requestKey: activeRequestKey,
+            result: {
+              reason: 'Codiff could not load this image.',
+              status: 'unavailable',
+            },
+          });
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [file.path, requestKey, section.kind, source]);
+
+  useEffect(() => {
+    onLayoutReady(section.id);
+  }, [mode, onLayoutReady, result.status, section.id]);
+
+  const handleImageLoad = useCallback(
+    (event: SyntheticEvent<HTMLImageElement>) => {
+      const { naturalHeight, naturalWidth } = event.currentTarget;
+      if (naturalHeight > 0 && naturalWidth > 0) {
+        setAspectRatio(naturalWidth / naturalHeight);
+      }
+      onLayoutReady(section.id);
+    },
+    [onLayoutReady, section.id],
+  );
+
+  if (result.status === 'unavailable') {
+    return (
+      <div className="codiff-image-preview codiff-image-preview-message">
+        <ImageBroken aria-hidden size={22} weight="duotone" />
+        <span>{result.reason}</span>
+      </div>
+    );
+  }
+
+  const { newImage, oldImage } = result;
+  const canCompare = Boolean(oldImage && newImage);
+  const effectiveMode = canCompare ? mode : 'side-by-side';
+  const stageStyle =
+    effectiveMode === 'slider'
+      ? ({
+          '--codiff-image-split': `${split}%`,
+          ...(aspectRatio ? { aspectRatio } : {}),
+        } as CSSProperties)
+      : undefined;
+
+  return (
+    <div className="codiff-image-preview">
+      <div className="codiff-image-preview-toolbar">
+        <span className="codiff-image-preview-title">Image</span>
+        {canCompare ? (
+          <div className="codiff-image-preview-mode" role="group">
+            <button
+              aria-label="Slider image comparison"
+              aria-pressed={effectiveMode === 'slider'}
+              className={effectiveMode === 'slider' ? 'active' : ''}
+              onClick={() => setMode('slider')}
+              title="Slider"
+              type="button"
+            >
+              <SquareSplitVertical aria-hidden size={16} weight="bold" />
+            </button>
+            <button
+              aria-label="Side-by-side image view"
+              aria-pressed={effectiveMode === 'side-by-side'}
+              className={effectiveMode === 'side-by-side' ? 'active' : ''}
+              onClick={() => setMode('side-by-side')}
+              title="Side-by-side"
+              type="button"
+            >
+              <Columns aria-hidden size={16} weight="bold" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {effectiveMode === 'slider' && oldImage && newImage ? (
+        <div className="codiff-image-slider">
+          <div className="codiff-image-slider-stage" ref={sliderStageRef} style={stageStyle}>
+            <img
+              alt={`Old ${file.path}`}
+              draggable={false}
+              onLoad={handleImageLoad}
+              src={oldImage.dataUrl}
+            />
+            <img
+              alt={`New ${file.path}`}
+              className="codiff-image-slider-new"
+              draggable={false}
+              onLoad={handleImageLoad}
+              src={newImage.dataUrl}
+            />
+            <div
+              aria-label="Image comparison split"
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={Math.round(split)}
+              className="codiff-image-slider-divider"
+              onKeyDown={handleDividerKeyDown}
+              onPointerCancel={handleDividerPointerUp}
+              onPointerDown={handleDividerPointerDown}
+              onPointerMove={handleDividerPointerMove}
+              onPointerUp={handleDividerPointerUp}
+              role="slider"
+              tabIndex={0}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="codiff-image-grid">
+          {oldImage ? (
+            <figure>
+              <div className="codiff-image-frame">
+                <img
+                  alt={`Old ${file.path}`}
+                  draggable={false}
+                  onLoad={handleImageLoad}
+                  src={oldImage.dataUrl}
+                />
+              </div>
+              <figcaption>
+                <span>Old</span>
+                <span>{formatBytes(oldImage.size)}</span>
+              </figcaption>
+            </figure>
+          ) : null}
+          {newImage ? (
+            <figure>
+              <div className="codiff-image-frame">
+                <img
+                  alt={`New ${file.path}`}
+                  draggable={false}
+                  onLoad={handleImageLoad}
+                  src={newImage.dataUrl}
+                />
+              </div>
+              <figcaption>
+                <span>New</span>
+                <span>{formatBytes(newImage.size)}</span>
+              </figcaption>
+            </figure>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -503,6 +785,7 @@ export function ReviewCodeView({
   searchQuery,
   selectedPath,
   showWhitespace,
+  source,
   viewed,
   walkthroughNotes,
 }: {
@@ -530,6 +813,7 @@ export function ReviewCodeView({
   searchQuery: string;
   selectedPath: string | null;
   showWhitespace: boolean;
+  source: ReviewSource;
   viewed: Record<string, string>;
   walkthroughNotes: ReadonlyMap<string, WalkthroughNote>;
 }) {
@@ -545,6 +829,9 @@ export function ReviewCodeView({
   // Markdown preview content is rendered through a CodeView annotation portal.
   // Bump the item version once the portal DOM exists so CodeView measures the real preview height.
   const [markdownPreviewLayoutPassBySection, setMarkdownPreviewLayoutPassBySection] = useState<
+    Readonly<Record<string, number>>
+  >({});
+  const [imagePreviewLayoutPassBySection, setImagePreviewLayoutPassBySection] = useState<
     Readonly<Record<string, number>>
   >({});
   const [selectedLines, setSelectedLines] = useState<CodeViewLineSelection | null>(null);
@@ -566,6 +853,13 @@ export function ReviewCodeView({
     }));
   }, []);
 
+  const markImagePreviewLayoutReady = useCallback((sectionId: string) => {
+    setImagePreviewLayoutPassBySection((current) => ({
+      ...current,
+      [sectionId]: (current[sectionId] ?? 0) + 1,
+    }));
+  }, []);
+
   const { firstItemByPath, itemMetadata, items } = useMemo(() => {
     const nextItems: Array<CodeViewItem<ReviewAnnotationMetadata>> = [];
     const nextFirstItemByPath = new Map<string, string>();
@@ -581,6 +875,7 @@ export function ReviewCodeView({
       for (const [index, { fileDiff, section }] of sections.entries()) {
         const id = getItemId(section);
         const markdownPreview = getMarkdownPreviewContents(file, section, fileDiff);
+        const canRenderImage = canRenderImagePreview(file.path, section);
         const canRenderMarkdown = markdownPreview != null;
         const isMarkdownPreview = canRenderMarkdown && markdownPreviewSections.has(section.id);
         const annotationMap = new Map<string, DiffLineAnnotation<ReviewAnnotationMetadata>>();
@@ -620,6 +915,39 @@ export function ReviewCodeView({
           walkthroughNote: walkthroughNotes.get(file.path),
         });
         nextFirstItemByPath.set(file.path, nextFirstItemByPath.get(file.path) ?? id);
+        if (canRenderImage) {
+          nextItems.push({
+            annotations: [
+              {
+                lineNumber: 1,
+                metadata: {
+                  path: file.path,
+                  sectionId: section.id,
+                  type: 'image-preview',
+                },
+              } satisfies LineAnnotation<ReviewAnnotationMetadata>,
+            ],
+            collapsed: isCollapsed,
+            file: {
+              cacheKey: `image-preview:${file.fingerprint}:${section.id}`,
+              contents: ' ',
+              lang: 'text',
+              name: file.path,
+            },
+            id,
+            type: 'file',
+            version: getItemVersion(
+              `${itemVersionByPath[file.path] ?? 0}:${file.fingerprint}:${section.id}:image:${
+                isCollapsed ? 'collapsed' : 'open'
+              }:${isViewed ? 'viewed' : 'pending'}:${index}:${
+                selectedPath === file.path ? 'selected' : 'idle'
+              }:${walkthroughNotes.get(file.path)?.reason ?? ''}:${
+                imagePreviewLayoutPassBySection[section.id] ?? 0
+              }`,
+            ),
+          });
+          continue;
+        }
         if (isMarkdownPreview) {
           const markdownPreviewAddedLinesDigest = getAddedLinesDigest(markdownPreview.addedLines);
           const markdownPreviewLayoutKey = `${section.id}:${markdownPreview.contents.length}:${markdownPreviewAddedLinesDigest}`;
@@ -689,6 +1017,7 @@ export function ReviewCodeView({
     commentsBySection,
     files,
     forceExpandedPaths,
+    imagePreviewLayoutPassBySection,
     itemVersionByPath,
     markdownPreviewLayoutPassBySection,
     markdownPreviewSections,
@@ -815,9 +1144,15 @@ export function ReviewCodeView({
           createCommentForRange(range, context);
         },
         onPostRender: (node, _instance, context) => {
+          const metadata = itemMetadata.get(context.item.id);
           node.classList.toggle(
             'codiff-markdown-preview-item',
-            itemMetadata.get(context.item.id)?.isMarkdownPreview === true,
+            metadata?.isMarkdownPreview === true,
+          );
+          node.classList.toggle(
+            'codiff-image-preview-item',
+            context.item.type === 'file' &&
+              Boolean(metadata && canRenderImagePreview(metadata.file.path, metadata.section)),
           );
         },
         stickyHeaders: true,
@@ -1068,6 +1403,18 @@ export function ReviewCodeView({
         | LineAnnotation<ReviewAnnotationMetadata>,
       item: CodeViewItem<ReviewAnnotationMetadata>,
     ) => {
+      if (annotation.metadata.type === 'image-preview') {
+        const meta = itemMetadata.get(item.id);
+        return meta ? (
+          <ImageDiffPreview
+            file={meta.file}
+            onLayoutReady={markImagePreviewLayoutReady}
+            section={meta.section}
+            source={source}
+          />
+        ) : null;
+      }
+
       if (annotation.metadata.type === 'markdown-preview') {
         return (
           <MarkdownPreview
@@ -1107,11 +1454,14 @@ export function ReviewCodeView({
       focusComment,
       gitIdentity,
       isPullRequest,
+      itemMetadata,
       keymap,
       markMarkdownPreviewLayoutReady,
+      markImagePreviewLayoutReady,
       onAskCodex,
       onSubmitComment,
       onUpdateComment,
+      source,
     ],
   );
 

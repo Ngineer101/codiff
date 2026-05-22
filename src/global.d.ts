@@ -2,6 +2,8 @@ import type { CodiffConfig } from './config/types.ts';
 import type {
   CodiffPreferences,
   CodiffLaunchOptions,
+  DiffImageContentRequest,
+  DiffImageContentResult,
   DiffSection,
   DiffSectionContentRequest,
   GitIdentity,
@@ -22,6 +24,7 @@ declare global {
     codiff: {
       askReviewAssistant: (request: ReviewAssistantRequest) => Promise<ReviewAssistantResult>;
       getConfig: () => Promise<CodiffConfig>;
+      getDiffImageContent: (request: DiffImageContentRequest) => Promise<DiffImageContentResult>;
       getDiffSectionContent: (request: DiffSectionContentRequest) => Promise<DiffSection>;
       getGitIdentity: () => Promise<GitIdentity>;
       getLaunchOptions: () => Promise<CodiffLaunchOptions>;

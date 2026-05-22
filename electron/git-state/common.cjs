@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 
 /**
  * @typedef {import('../src/types.ts').ChangedFile} ChangedFile
+ * @typedef {import('../src/types.ts').DiffImageRevision} DiffImageRevision
  * @typedef {import('../src/types.ts').DiffSection} DiffSection
  * @typedef {import('../src/types.ts').DiffSectionContentRequest} DiffSectionContentRequest
  * @typedef {import('../src/types.ts').GitFileStatus} GitFileStatus
@@ -105,7 +106,19 @@ const gitBufferWithInput = (repoPath, args, input) =>
 
 const EAGER_TEXT_FILE_LIMIT = 256 * 1024;
 const MANUAL_TEXT_FILE_LIMIT = 2 * 1024 * 1024;
+const IMAGE_FILE_LIMIT = 32 * 1024 * 1024;
 const MAX_UNTRACKED_INITIAL_ITEMS = 1000;
+const imageMimeTypes = new Map([
+  ['.apng', 'image/apng'],
+  ['.avif', 'image/avif'],
+  ['.bmp', 'image/bmp'],
+  ['.gif', 'image/gif'],
+  ['.ico', 'image/x-icon'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
+]);
 const GENERATED_DIRECTORY_NAMES = new Set([
   '.cache',
   '.next',
@@ -229,6 +242,35 @@ const formatBytes = (size) => {
   return `${size} B`;
 };
 
+/** @param {string} path */
+const getImageMimeType = (path) => {
+  const dotIndex = path.lastIndexOf('.');
+  return dotIndex === -1 ? undefined : imageMimeTypes.get(path.slice(dotIndex).toLowerCase());
+};
+
+/**
+ * @param {string} path
+ * @param {Buffer} buffer
+ * @returns {DiffImageRevision}
+ */
+const bufferToImageRevision = (path, buffer) => {
+  const mimeType = getImageMimeType(path);
+  if (!mimeType) {
+    throw new Error('Unsupported image file type.');
+  }
+
+  if (buffer.length > IMAGE_FILE_LIMIT) {
+    throw new Error(`Image is ${formatBytes(buffer.length)}, so Codiff skipped rendering it.`);
+  }
+
+  return {
+    dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+    mimeType,
+    name: path,
+    size: buffer.length,
+  };
+};
+
 /** @param {string} reason @param {Partial<DiffSummary>} [details] @returns {DiffSummary} */
 const createSummary = (reason, details = {}) => ({
   reason,
@@ -292,6 +334,59 @@ const bufferToTextFile = (name, buffer, cacheKey) => {
       name,
     },
   };
+};
+
+/**
+ * @param {string} repoRoot
+ * @param {string} spec
+ * @param {string} path
+ * @returns {Promise<DiffImageRevision | undefined>}
+ */
+const readImageSpec = async (repoRoot, spec, path) => {
+  const mimeType = getImageMimeType(path);
+  if (!mimeType) {
+    throw new Error('Unsupported image file type.');
+  }
+
+  const size = await getBlobSize(repoRoot, spec);
+  if (size == null) {
+    return undefined;
+  }
+
+  if (size > IMAGE_FILE_LIMIT) {
+    throw new Error(`Image is ${formatBytes(size)}, so Codiff skipped rendering it.`);
+  }
+
+  try {
+    return bufferToImageRevision(path, await gitBuffer(repoRoot, ['show', spec]));
+  } catch {
+    return undefined;
+  }
+};
+
+/** @param {string} repoRoot @param {string} ref @param {string} path */
+const readGitImageFile = (repoRoot, ref, path) => readImageSpec(repoRoot, `${ref}:${path}`, path);
+
+/** @param {string} repoRoot @param {string} path */
+const readIndexImageFile = (repoRoot, path) => readImageSpec(repoRoot, `:${path}`, path);
+
+/** @param {string} repoRoot @param {string} path */
+const readWorkingTreeImageFile = async (repoRoot, path) => {
+  const mimeType = getImageMimeType(path);
+  if (!mimeType) {
+    throw new Error('Unsupported image file type.');
+  }
+
+  const stat = await readFileStat(repoRoot, path);
+  if (!stat || !stat.isFile()) {
+    return undefined;
+  }
+
+  if (stat.size > IMAGE_FILE_LIMIT) {
+    throw new Error(`Image is ${formatBytes(stat.size)}, so Codiff skipped rendering it.`);
+  }
+
+  return bufferToImageRevision(path, await fs.readFile(join(repoRoot, path)));
 };
 
 /**
@@ -704,9 +799,11 @@ const gitOrEmpty = async (repoRoot, args) => {
 module.exports = {
   EAGER_TEXT_FILE_LIMIT,
   GENERATED_DIRECTORY_NAMES,
+  IMAGE_FILE_LIMIT,
   MANUAL_TEXT_FILE_LIMIT,
   MAX_UNTRACKED_INITIAL_ITEMS,
   bufferToTextFile,
+  bufferToImageRevision,
   createPatchForNewFile,
   createSection,
   createSummary,
@@ -717,6 +814,7 @@ module.exports = {
   getBlobSize,
   getFingerprint,
   getGravatarHash,
+  getImageMimeType,
   getPatch,
   getWorkingTreeContents,
   git,
@@ -728,7 +826,11 @@ module.exports = {
   parseStatus,
   readFileStat,
   readGitFile,
+  readGitImageFile,
+  readImageSpec,
   readIndexFile,
+  readIndexImageFile,
+  readWorkingTreeImageFile,
   readWorkingTreeFile,
   summarizeContent,
   validateRepositoryPath,
