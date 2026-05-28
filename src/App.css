@@ -1542,6 +1542,7 @@
 .codiff-status-badge,
 .codiff-section-badge,
 .codiff-line-count,
+.codiff-load-button,
 .codiff-markdown-button,
 .codiff-open-button,
 .codiff-viewed-button {
@@ -1592,6 +1593,7 @@
 }
 
 .codiff-markdown-button,
+.codiff-load-button,
 .codiff-open-button,
 .codiff-viewed-button {
   border: 1px solid rgb(127 127 127 / 0.18);
@@ -1605,6 +1607,16 @@
 .codiff-markdown-button.active {
   border-color: rgb(127 127 127 / 0.18);
   color: var(--text);
+}
+
+.codiff-load-button {
+  color: var(--text);
+}
+
+.codiff-load-button:disabled {
+  color: var(--muted);
+  cursor: progress;
+  opacity: 0.72;
 }
 
 .codiff-open-button {
@@ -2158,6 +2170,7 @@
   }
 
   .codiff-markdown-button,
+  .codiff-load-button,
   .codiff-open-button,
   .codiff-viewed-button {
     padding-inline: 9px;

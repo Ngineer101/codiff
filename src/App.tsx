@@ -136,6 +136,7 @@ export default function App() {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [pendingSource, setPendingSource] = useState<ReviewSource | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [loadingSectionIds, setLoadingSectionIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => readSidebarCollapsed());
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('tree');
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => readSidebarWidth());
@@ -174,6 +175,99 @@ export default function App() {
       [path]: (current[path] ?? 0) + 1,
     }));
   }, []);
+
+  const loadDiffSection = useCallback(
+    (file: ChangedFile, section: DiffSection, repositoryState = stateRef.current) => {
+      const currentState = repositoryState;
+      if (
+        !currentState ||
+        (currentState.source.type !== 'working-tree' && currentState.source.type !== 'commit') ||
+        !shouldLoadDiffSectionContents(section)
+      ) {
+        return;
+      }
+
+      const sourceKey = getSourceKey(currentState.source);
+      const key = `${currentState.root}:${sourceKey}:${section.id}`;
+      if (loadingSectionKeysRef.current.has(key)) {
+        return;
+      }
+
+      loadingSectionKeysRef.current.add(key);
+      setLoadingSectionIds((current) => new Set(current).add(section.id));
+
+      window.codiff
+        .getDiffSectionContent({
+          force: true,
+          kind: section.kind,
+          path: file.path,
+          source: currentState.source,
+        })
+        .then((loadedSection) => {
+          setState((current) => {
+            if (
+              !current ||
+              current.root !== currentState.root ||
+              getSourceKey(current.source) !== sourceKey
+            ) {
+              return current;
+            }
+
+            return {
+              ...current,
+              files: current.files.map((candidate) =>
+                candidate.path === file.path
+                  ? {
+                      ...candidate,
+                      sections: candidate.sections.map((candidateSection) =>
+                        candidateSection.id === section.id ? loadedSection : candidateSection,
+                      ),
+                    }
+                  : candidate,
+              ),
+            };
+          });
+          bumpItemVersion(file.path);
+        })
+        .catch(() => {
+          setState((current) => {
+            if (
+              !current ||
+              current.root !== currentState.root ||
+              getSourceKey(current.source) !== sourceKey
+            ) {
+              return current;
+            }
+
+            return {
+              ...current,
+              files: current.files.map((candidate) =>
+                candidate.path === file.path
+                  ? {
+                      ...candidate,
+                      sections: candidate.sections.map((candidateSection) =>
+                        candidateSection.id === section.id
+                          ? getFailedSectionLoadState(candidateSection)
+                          : candidateSection,
+                      ),
+                    }
+                  : candidate,
+              ),
+            };
+          });
+          bumpItemVersion(file.path);
+        })
+        .finally(() => {
+          loadingSectionKeysRef.current.delete(key);
+          setLoadingSectionIds((current) => {
+            const next = new Set(current);
+            next.delete(section.id);
+            return next;
+          });
+        });
+    },
+    [bumpItemVersion],
+  );
 
   const saveCurrentSourceSession = useCallback(() => {
     const currentState = stateRef.current;
@@ -366,92 +460,10 @@ export default function App() {
       return;
     }
 
-    let canceled = false;
-    const sourceKey = getSourceKey(state.source);
-
     for (const section of loadableSections) {
-      const key = `${state.root}:${section.id}`;
-      if (loadingSectionKeysRef.current.has(key)) {
-        continue;
-      }
-
-      loadingSectionKeysRef.current.add(key);
-      window.codiff
-        .getDiffSectionContent({
-          force: true,
-          kind: section.kind,
-          path: selectedFile.path,
-          source: state.source,
-        })
-        .then((loadedSection) => {
-          if (canceled) {
-            return;
-          }
-
-          setState((current) => {
-            if (
-              !current ||
-              current.root !== state.root ||
-              getSourceKey(current.source) !== sourceKey
-            ) {
-              return current;
-            }
-
-            return {
-              ...current,
-              files: current.files.map((file) =>
-                file.path === selectedFile.path
-                  ? {
-                      ...file,
-                      sections: file.sections.map((candidate) =>
-                        candidate.id === section.id ? loadedSection : candidate,
-                      ),
-                    }
-                  : file,
-              ),
-            };
-          });
-          bumpItemVersion(selectedFile.path);
-        })
-        .catch(() => {
-          if (!canceled) {
-            setState((current) => {
-              if (
-                !current ||
-                current.root !== state.root ||
-                getSourceKey(current.source) !== sourceKey
-              ) {
-                return current;
-              }
-
-              return {
-                ...current,
-                files: current.files.map((file) =>
-                  file.path === selectedFile.path
-                    ? {
-                        ...file,
-                        sections: file.sections.map((candidate) =>
-                          candidate.id === section.id
-                            ? getFailedSectionLoadState(candidate)
-                            : candidate,
-                        ),
-                      }
-                    : file,
-                ),
-              };
-            });
-            bumpItemVersion(selectedFile.path);
-          }
-        })
-        .finally(() => {
-          loadingSectionKeysRef.current.delete(key);
-        });
+      loadDiffSection(selectedFile, section, state);
     }
-
-    return () => {
-      canceled = true;
-    };
-  }, [bumpItemVersion, selectedPath, state]);
+  }, [loadDiffSection, selectedPath, state]);
 
   useEffect(() => {
     if (!state || state.source.type !== 'working-tree' || !diffSearchQuery.trim()) {
@@ -489,7 +501,7 @@ export default function App() {
         return;
       }
 
-      const key = `${state.root}:${request.section.id}`;
+      const key = `${state.root}:${sourceKey}:${request.section.id}`;
       if (loadingSectionKeysRef.current.has(key)) {
         return loadNext();
       }
@@ -1885,9 +1897,11 @@ export default function App() {
             isPullRequest={isPullRequest}
             itemVersionByPath={itemVersionByPath}
             keymap={codiffConfig.keymap}
+            loadingSectionIds={loadingSectionIds}
             onAskCodex={askCodex}
             onCreateComment={createComment}
             onDeleteComment={deleteComment}
+            onLoadSection={loadDiffSection}
             onOpenFile={openFile}
             onSelectPathFromScroll={updateSelectedPathFromScroll}
             onSubmitComment={submitPullRequestComment}

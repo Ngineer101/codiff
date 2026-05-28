@@ -202,6 +202,16 @@ export const codeViewUnsafeCSS = `
     pointer-events: none;
   }
 
+  :host(.codiff-loadable-summary-item) [data-file] [data-line],
+  :host(.codiff-loadable-summary-item) [data-file] [data-column-number] {
+    cursor: pointer;
+  }
+
+  :host(.codiff-loading-summary-item) [data-file] [data-line],
+  :host(.codiff-loading-summary-item) [data-file] [data-column-number] {
+    cursor: progress;
+  }
+
   .codiff-search-mark {
     background: var(--diffs-find-highlight-bg, rgb(255 216 92 / 0.65));
     border-radius: 3px;

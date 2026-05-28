@@ -584,7 +584,7 @@ test('readWorkingTreeState defers large untracked text files and loads them on d
   await withRepo(async (repo) => {
     await writeRepoFile(repo, 'tracked.txt', 'tracked\n');
     await commitAll(repo, 'initial commit');
-    const contents = `${'large line\n'.repeat(30_000)}end\n`;
+    const contents = `${'large line\n'.repeat(100_000)}end\n`;
     await writeRepoFile(repo, 'large.txt', contents);
 
     const state = await readWorkingTreeState(repo);
@@ -917,7 +917,7 @@ test('readRepositoryState defers medium committed files and loads them on demand
   await withRepo(async (repo) => {
     await writeRepoFile(repo, 'base.txt', 'base\n');
     await commitAll(repo, 'initial commit');
-    const contents = `${'large committed line\n'.repeat(14_000)}end\n`;
+    const contents = `${'large committed line\n'.repeat(60_000)}end\n`;
     await writeRepoFile(repo, 'large.txt', contents);
     await commitAll(repo, 'large commit');
     const commit = (await git(repo, ['rev-parse', 'HEAD'])).trim();

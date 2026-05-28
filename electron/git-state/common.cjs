@@ -104,7 +104,7 @@ const gitBufferWithInput = (repoPath, args, input) =>
     child.stdin.end(input);
   });
 
-const EAGER_TEXT_FILE_LIMIT = 256 * 1024;
+const EAGER_TEXT_FILE_LIMIT = 1024 * 1024;
 const MANUAL_TEXT_FILE_LIMIT = 2 * 1024 * 1024;
 const IMAGE_FILE_LIMIT = 32 * 1024 * 1024;
 const MAX_UNTRACKED_INITIAL_ITEMS = 1000;

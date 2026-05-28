@@ -57,6 +57,7 @@ import {
   getItemId,
   getMarkdownPreviewContents,
   getVisibleDiffSections,
+  shouldLoadDiffSectionContents,
 } from '../../lib/diff.ts';
 import { getItemVersion } from '../../lib/item-version.ts';
 import { renderMarkdown } from '../../lib/markdown.tsx';
@@ -132,13 +133,17 @@ function CopyFilePathButton({ path }: { path: string }) {
 }
 
 function CodeViewHeader({
+  isSectionLoading,
   meta,
+  onLoadSection,
   onOpenFile,
   onToggleCollapsed,
   onToggleMarkdownPreview,
   onToggleViewed,
 }: {
+  isSectionLoading: boolean;
   meta: CodeViewItemMetadata;
+  onLoadSection: (file: ChangedFile, section: DiffSection) => void;
   onOpenFile: (file: ChangedFile) => void;
   onToggleCollapsed: (file: ChangedFile, isCollapsed: boolean) => void;
   onToggleMarkdownPreview: (section: DiffSection) => void;
@@ -157,6 +162,7 @@ function CodeViewHeader({
     walkthroughNote,
   } = meta;
   const canOpenFile = file.status !== 'deleted';
+  const canLoadSection = section.loadState === 'deferred' && shouldLoadDiffSectionContents(section);
 
   return (
     <div
@@ -214,6 +220,17 @@ function CodeViewHeader({
           type="button"
         >
           {isMarkdownPreview ? 'View as Diff' : 'View as Markdown'}
+        </button>
+      ) : null}
+      {canLoadSection ? (
+        <button
+          className="codiff-load-button"
+          disabled={isSectionLoading}
+          onClick={() => onLoadSection(file, section)}
+          title={isSectionLoading ? 'Loading file contents' : 'Load file contents'}
+          type="button"
+        >
+          {isSectionLoading ? 'Loading...' : 'Load'}
         </button>
       ) : null}
       <button
@@ -772,9 +789,11 @@ export function ReviewCodeView({
   isPullRequest,
   itemVersionByPath,
   keymap,
+  loadingSectionIds,
   onAskCodex,
   onCreateComment,
   onDeleteComment,
+  onLoadSection,
   onOpenFile,
   onSelectPathFromScroll,
   onSubmitComment,
@@ -801,9 +820,11 @@ export function ReviewCodeView({
   isPullRequest: boolean;
   itemVersionByPath: Readonly<Record<string, number>>;
   keymap: CodiffKeymap;
+  loadingSectionIds: ReadonlySet<string>;
   onAskCodex: (commentId: string) => void;
   onCreateComment: (comment: Omit<ReviewComment, 'body' | 'id'>) => void;
   onDeleteComment: (commentId: string) => void;
+  onLoadSection: (file: ChangedFile, section: DiffSection) => void;
   onOpenFile: (file: ChangedFile) => void;
   onSelectPathFromScroll: (viewer: CodeViewInstance) => void;
   onSubmitComment: (commentId: string) => void;
@@ -1119,6 +1140,14 @@ export function ReviewCodeView({
             return;
           }
 
+          if (
+            meta.section.loadState === 'deferred' &&
+            shouldLoadDiffSectionContents(meta.section)
+          ) {
+            onLoadSection(meta.file, meta.section);
+            return;
+          }
+
           const side = 'annotationSide' in line ? line.annotationSide : null;
           if (!side) {
             return;
@@ -1155,6 +1184,15 @@ export function ReviewCodeView({
             context.item.type === 'file' &&
               Boolean(metadata && canRenderImagePreview(metadata.file.path, metadata.section)),
           );
+          node.classList.toggle(
+            'codiff-loadable-summary-item',
+            metadata?.section.loadState === 'deferred' &&
+              shouldLoadDiffSectionContents(metadata.section),
+          );
+          node.classList.toggle(
+            'codiff-loading-summary-item',
+            Boolean(metadata && loadingSectionIds.has(metadata.section.id)),
+          );
         },
         stickyHeaders: true,
         theme: {
@@ -1170,7 +1208,9 @@ export function ReviewCodeView({
       createCommentForRange,
       diffStyle,
       itemMetadata,
+      loadingSectionIds,
       onCreateComment,
+      onLoadSection,
     ],
   );
 
@@ -1386,7 +1426,9 @@ export function ReviewCodeView({
       const meta = itemMetadata.get(item.id);
       return meta ? (
         <CodeViewHeader
+          isSectionLoading={loadingSectionIds.has(meta.section.id)}
           meta={meta}
+          onLoadSection={onLoadSection}
           onOpenFile={onOpenFile}
           onToggleCollapsed={onToggleCollapsed}
           onToggleMarkdownPreview={toggleMarkdownPreview}
@@ -1394,7 +1436,15 @@ export function ReviewCodeView({
         />
       ) : null;
     },
-    [itemMetadata, onOpenFile, onToggleCollapsed, onToggleViewed, toggleMarkdownPreview],
+    [
+      itemMetadata,
+      loadingSectionIds,
+      onLoadSection,
+      onOpenFile,
+      onToggleCollapsed,
+      onToggleViewed,
+      toggleMarkdownPreview,
+    ],
   );
 
   const renderAnnotation = useCallback(
