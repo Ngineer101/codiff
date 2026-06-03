@@ -1,3 +1,4 @@
+import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import { CopyIcon as Copy } from '@phosphor-icons/react/Copy';
 import { Fragment, useCallback, useLayoutEffect } from 'react';
 import { statusLabel } from '../../lib/code-view-options.ts';
@@ -95,6 +96,75 @@ export type CommitDetailsFile = CommitMetadataFile & {
   destinationItemId: string | null;
 };
 
+export function CommitDetailsHeader({
+  isCollapsed,
+  metadata,
+  onToggleCollapsed,
+}: {
+  isCollapsed: boolean;
+  metadata: CommitMetadata;
+  onToggleCollapsed: () => void;
+}) {
+  const [copied, markCopied] = useCopiedState(1600);
+  const copyRef = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(metadata.ref);
+    } catch {
+      // If copying fails, leave the button unchanged.
+      return;
+    }
+    markCopied();
+  }, [markCopied, metadata.ref]);
+  const copyLabel = copied ? 'Commit hash copied' : 'Copy full commit hash';
+
+  return (
+    <div
+      className={`codiff-file-header codiff-commit-details-header${isCollapsed ? ' collapsed' : ''}`}
+    >
+      <div
+        aria-expanded={!isCollapsed}
+        aria-label={isCollapsed ? 'Expand commit details' : 'Collapse commit details'}
+        className="codiff-header-toggle"
+        onClick={onToggleCollapsed}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onToggleCollapsed();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        title={isCollapsed ? 'Expand' : 'Collapse'}
+      >
+        <span className="codiff-chevron-box">
+          <CaretDown
+            aria-hidden
+            className={isCollapsed ? 'codiff-chevron collapsed' : 'codiff-chevron'}
+            size={16}
+            weight="bold"
+          />
+        </span>
+        <span className="codiff-file-heading">
+          <span className="codiff-file-path-row">
+            <span className="codiff-file-path">{metadata.subject || metadata.shortRef}</span>
+          </span>
+        </span>
+      </div>
+      <CommitStatsChips stats={metadata.stats} />
+      <button
+        aria-label={copyLabel}
+        className={`commit-details-copy${copied ? ' copied' : ''}`}
+        onClick={() => void copyRef()}
+        title={copyLabel}
+        type="button"
+      >
+        <code>{metadata.shortRef}</code>
+        <Copy aria-hidden size={15} weight="bold" />
+      </button>
+    </div>
+  );
+}
+
 export function CommitDetailsPanel({
   files,
   layoutKey,
@@ -108,44 +178,15 @@ export function CommitDetailsPanel({
   onLayoutReady?: (layoutKey: string) => void;
   onSelectFileDestination?: (itemId: string) => void;
 }) {
-  const [copied, markCopied] = useCopiedState(1600);
-
   useLayoutEffect(() => {
     onLayoutReady?.(layoutKey);
   }, [layoutKey, onLayoutReady]);
-
-  const copyRef = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(metadata.ref);
-    } catch {
-      // If copying fails, leave the button unchanged.
-      return;
-    }
-    markCopied();
-  }, [markCopied, metadata.ref]);
-  const copyLabel = copied ? 'Commit hash copied' : 'Copy full commit hash';
 
   return (
     <section
       aria-label={`Commit details for ${getShortRef(metadata.ref)}`}
       className="commit-details-panel squircle"
     >
-      <header className="commit-details-header">
-        <h2>{metadata.subject || metadata.shortRef}</h2>
-        <div className="commit-details-header-actions">
-          <CommitStatsChips stats={metadata.stats} />
-          <button
-            aria-label={copyLabel}
-            className={`commit-details-copy${copied ? ' copied' : ''}`}
-            onClick={() => void copyRef()}
-            title={copyLabel}
-            type="button"
-          >
-            <code>{metadata.shortRef}</code>
-            <Copy aria-hidden size={15} weight="bold" />
-          </button>
-        </div>
-      </header>
       {metadata.body.trim() ? (
         <section className="commit-details-section message">
           <h3>Comment</h3>
@@ -222,11 +263,15 @@ export function CommitDetailsPanel({
                 </span>
                 <code>{file.path}</code>
                 {file.binary ? (
-                  <span>binary</span>
+                  <span className="commit-details-file-meta">binary</span>
                 ) : (
-                  <span>
-                    +{numberFormatter.format(file.additions ?? 0)} -
-                    {numberFormatter.format(file.deletions ?? 0)}
+                  <span className="commit-details-file-line-count">
+                    <span className="codiff-line-count-added">
+                      +{numberFormatter.format(file.additions ?? 0)}
+                    </span>
+                    <span className="codiff-line-count-deleted">
+                      -{numberFormatter.format(file.deletions ?? 0)}
+                    </span>
                   </span>
                 )}
               </button>

@@ -168,10 +168,6 @@ export const codeViewUnsafeCSS = `
     box-shadow: none;
   }
 
-  :host(.codiff-commit-details-item) [data-diffs-header="custom"][data-sticky] {
-    display: none;
-  }
-
   :host(.codiff-commit-details-item) [data-file] {
     background: transparent;
     border: 0;

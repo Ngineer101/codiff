@@ -81,7 +81,11 @@ import type {
   PullRequestExistingReviewComment,
   ReviewSource,
 } from '../../types.ts';
-import { CommitDetailsPanel, type CommitDetailsFile } from './CommitDetails.tsx';
+import {
+  CommitDetailsHeader,
+  CommitDetailsPanel,
+  type CommitDetailsFile,
+} from './CommitDetails.tsx';
 import { Gravatar } from './Gravatar.tsx';
 import { DiffLineCountBadge } from './Sidebar.tsx';
 import { useCopiedState } from './useCopiedState.ts';
@@ -885,10 +889,21 @@ export function ReviewCodeView({
   const [imagePreviewLayoutPassBySection, setImagePreviewLayoutPassBySection] = useState<
     Readonly<Record<string, number>>
   >({});
-  const [commitDetailsLayoutPass, setCommitDetailsLayoutPass] = useState(0);
   const [selectedLines, setSelectedLines] = useState<CodeViewLineSelection | null>(null);
   const commitRef = source.type === 'commit' ? source.ref : null;
   const commitDetailsItemId = commitRef ? `commit-details:${commitRef}` : null;
+  const [commitDetailsLayoutPass, setCommitDetailsLayoutPass] = useState(0);
+  const [commitDetailsCollapseState, setCommitDetailsCollapseState] = useState<{
+    collapsed: boolean;
+    itemId: string | null;
+  }>({
+    collapsed: false,
+    itemId: null,
+  });
+  const commitDetailsCollapsed =
+    commitDetailsCollapseState.itemId === commitDetailsItemId
+      ? commitDetailsCollapseState.collapsed
+      : false;
   const stickyHeaderFrameRef = useRef<number | null>(null);
   const commentsBySection = useMemo(() => {
     const map = new Map<string, Array<ReviewComment>>();
@@ -1102,6 +1117,7 @@ export function ReviewCodeView({
             },
           } satisfies LineAnnotation<ReviewAnnotationMetadata>,
         ],
+        collapsed: commitDetailsCollapsed,
         file: {
           cacheKey: `${commitDetailsItemId}:${commitMetadata.ref}`,
           contents: ' ',
@@ -1111,7 +1127,11 @@ export function ReviewCodeView({
         id: commitDetailsItemId,
         type: 'file',
         version: getItemVersion(
-          getCommitDetailsVersionKey(commitMetadata, commitDetailsLayoutPass, navigationKey),
+          `${getCommitDetailsVersionKey(
+            commitMetadata,
+            commitDetailsLayoutPass,
+            navigationKey,
+          )}:${commitDetailsCollapsed ? 'collapsed' : 'open'}`,
         ),
       });
     }
@@ -1125,6 +1145,7 @@ export function ReviewCodeView({
   }, [
     collapsed,
     commitDetailsItemId,
+    commitDetailsCollapsed,
     commitDetailsLayoutPass,
     commitMetadata,
     commentsBySection,
@@ -1546,7 +1567,18 @@ export function ReviewCodeView({
   const renderCustomHeader = useCallback(
     (item: CodeViewItem<ReviewAnnotationMetadata>) => {
       if (item.id === commitDetailsItemId) {
-        return null;
+        return commitMetadata ? (
+          <CommitDetailsHeader
+            isCollapsed={commitDetailsCollapsed}
+            metadata={commitMetadata}
+            onToggleCollapsed={() =>
+              setCommitDetailsCollapseState((current) => ({
+                collapsed: current.itemId === commitDetailsItemId ? !current.collapsed : true,
+                itemId: commitDetailsItemId,
+              }))
+            }
+          />
+        ) : null;
       }
 
       const meta = itemMetadata.get(item.id);
@@ -1564,6 +1596,8 @@ export function ReviewCodeView({
     },
     [
       commitDetailsItemId,
+      commitDetailsCollapsed,
+      commitMetadata,
       itemMetadata,
       loadingSectionIds,
       onLoadSection,

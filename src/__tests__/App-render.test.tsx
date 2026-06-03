@@ -532,6 +532,13 @@ test('commit details render inline in the diff view', async () => {
     expect(signature.textContent).not.toContain(commitMetadata.signature.key);
     expect(signature.getAttribute('title')).toBe(commitMetadata.signature.key);
 
+    const fileLineCount = container.querySelector<HTMLElement>('.commit-details-file-line-count');
+    if (!fileLineCount) {
+      throw new Error('Expected commit details file line count.');
+    }
+    expect(fileLineCount.querySelector('.codiff-line-count-added')?.textContent).toBe('+1');
+    expect(fileLineCount.querySelector('.codiff-line-count-deleted')?.textContent).toBe('-1');
+
     const copyButton = container.querySelector<HTMLButtonElement>('.commit-details-copy');
     if (!copyButton) {
       throw new Error('Expected commit details copy button.');
