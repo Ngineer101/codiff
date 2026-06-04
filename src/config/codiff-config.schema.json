@@ -14,6 +14,17 @@
       "description": "Application settings.",
       "additionalProperties": false,
       "properties": {
+        "agentBackend": {
+          "type": "string",
+          "enum": ["codex", "claude"],
+          "default": "codex",
+          "description": "Which agent CLI powers review assistance and walkthroughs. 'codex' uses the OpenAI Codex CLI; 'claude' uses the Claude Code CLI."
+        },
+        "claudeModel": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "The Claude Code model to use for review assistance and walkthroughs when agentBackend is 'claude'."
+        },
         "copyCommentsOnClose": {
           "type": "boolean",
           "default": false,
@@ -98,6 +109,11 @@
           "default": "Shift+Enter",
           "description": "Navigate to the previous search match."
         },
+        "shortcutsHelp": {
+          "type": "string",
+          "default": "Shift+?",
+          "description": "Hold to show the keyboard shortcut overlay."
+        },
         "closeSearch": {
           "type": "string",
           "default": "Escape",
@@ -117,6 +133,11 @@
           "type": "string",
           "default": "Mod+b",
           "description": "Toggle the sidebar between expanded and collapsed states."
+        },
+        "toggleWordWrap": {
+          "type": "string",
+          "default": "Alt+z",
+          "description": "Toggle word wrap for long diff lines."
         }
       }
     }

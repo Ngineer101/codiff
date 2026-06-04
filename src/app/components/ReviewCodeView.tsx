@@ -27,6 +27,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type SyntheticEvent,
 } from 'react';
+import claudeIconUrl from '../../assets/claude.svg';
 import codexIconUrl from '../../assets/codex.svg';
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffDiffStyle, CodiffKeymap } from '../../config/types.ts';
@@ -266,9 +267,14 @@ function ReviewAvatar({
   return <Gravatar fallback={label} size="medium" url={avatarUrl} />;
 }
 
-function CodexAvatar() {
+function AgentAvatar({ agentId }: { agentId: 'codex' | 'claude' }) {
   return (
-    <img alt="" className="review-comment-avatar-codex" draggable={false} src={codexIconUrl} />
+    <img
+      alt=""
+      className="review-comment-avatar-codex"
+      draggable={false}
+      src={agentId === 'claude' ? claudeIconUrl : codexIconUrl}
+    />
   );
 }
 
@@ -581,6 +587,8 @@ function ImageDiffPreview({
 }
 
 function ReviewAnnotation({
+  agentId,
+  agentLabel,
   annotation,
   comments,
   focusCommentId,
@@ -595,6 +603,8 @@ function ReviewAnnotation({
   onSubmitComment,
   onUpdateComment,
 }: {
+  agentId: 'codex' | 'claude';
+  agentLabel: string;
   annotation: DiffLineAnnotation<ReviewCommentAnnotationMetadata>;
   comments: ReadonlyArray<ReviewComment>;
   focusCommentId: string | null;
@@ -687,7 +697,11 @@ function ReviewAnnotation({
                       className="review-comment-action"
                       disabled={!canAskCodex}
                       onClick={() => onAskCodex(comment.id)}
-                      title={canAskCodex ? 'Ask Codex' : 'Write a note before asking Codex'}
+                      title={
+                        canAskCodex
+                          ? `Ask ${agentLabel}`
+                          : `Write a note before asking ${agentLabel}`
+                      }
                       type="button"
                     >
                       Ask
@@ -746,10 +760,10 @@ function ReviewAnnotation({
             </div>
             {comment.codexReply ? (
               <div className="review-comment codex">
-                <CodexAvatar />
+                <AgentAvatar agentId={agentId} />
                 <div className="review-comment-body codex">
                   <div className="review-comment-header codex">
-                    <strong>Codex</strong>
+                    <strong>{agentLabel}</strong>
                   </div>
                   <div
                     className={`review-comment-codex-reply${
@@ -757,7 +771,9 @@ function ReviewAnnotation({
                     }${comment.codexReply.status === 'error' ? ' error' : ''}`}
                   >
                     {comment.codexReply.status === 'loading' ? (
-                      <span className="review-comment-codex-loading">Waiting for Codex…</span>
+                      <span className="review-comment-codex-loading">
+                        Waiting for {agentLabel}…
+                      </span>
                     ) : (
                       renderMarkdown(comment.codexReply.body ?? comment.codexReply.error ?? '')
                     )}
@@ -806,6 +822,8 @@ const getEffectiveScrollBehavior = (behavior: ReviewScrollBehavior) =>
 
 export function ReviewCodeView({
   activeSearchMatch,
+  agentId,
+  agentLabel,
   collapsed,
   comments,
   commitMetadata,
@@ -839,6 +857,8 @@ export function ReviewCodeView({
   wordWrap,
 }: {
   activeSearchMatch: DiffSearchMatch | null;
+  agentId: 'codex' | 'claude';
+  agentLabel: string;
   collapsed: ReadonlySet<string>;
   comments: ReadonlyArray<ReviewComment>;
   commitMetadata: CommitMetadata | null;
@@ -1653,6 +1673,8 @@ export function ReviewCodeView({
 
       return item.type === 'diff' ? (
         <ReviewAnnotation
+          agentId={agentId}
+          agentLabel={agentLabel}
           annotation={annotation as DiffLineAnnotation<ReviewCommentAnnotationMetadata>}
           comments={comments}
           focusCommentId={focusCommentId}
@@ -1670,6 +1692,8 @@ export function ReviewCodeView({
       ) : null;
     },
     [
+      agentId,
+      agentLabel,
       comments,
       blurComment,
       commitDetailsFiles,

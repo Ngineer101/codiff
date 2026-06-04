@@ -7,9 +7,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { CommandBar } from './app/components/CommandBar.tsx';
+import { KeyboardShortcutsHelp } from './app/components/KeyboardShortcutsHelp.tsx';
 import {
+  AgentUnavailablePanel,
   CopyCommentsButton,
-  CodexUnavailablePanel,
   DiffSearchPanel,
   FirstRunPanel,
   PullRequestReviewButtons,
@@ -23,9 +24,10 @@ import { createDefaultConfig } from './config/defaults.ts';
 import { getShortcutLabel, matchesShortcut } from './config/keymap.ts';
 import type { CodiffConfig } from './config/types.ts';
 import {
-  defaultCodexSkillStatus,
+  defaultAgentSkillStatus,
   defaultLaunchOptions,
   defaultTerminalHelperStatus,
+  getAgentLabel,
   HISTORY_PAGE_SIZE,
 } from './lib/app-constants.ts';
 import {
@@ -81,7 +83,7 @@ import {
 } from './lib/walkthrough.ts';
 import type {
   ChangedFile,
-  CodexSkillStatus,
+  AgentSkillStatus,
   CodiffLaunchOptions,
   CodiffPreferences,
   GitIdentity,
@@ -138,9 +140,9 @@ export default function App() {
   const [localChangesDetected, setLocalChangesDetected] = useState(false);
   const [launchOptions, setLaunchOptions] = useState<CodiffLaunchOptions>(defaultLaunchOptions);
   const [codiffConfig, setCodiffConfig] = useState<CodiffConfig>(createDefaultConfig);
-  const [codexSkillInstalling, setCodexSkillInstalling] = useState(false);
-  const [codexSkillStatus, setCodexSkillStatus] =
-    useState<CodexSkillStatus>(defaultCodexSkillStatus);
+  const [agentSkillInstalling, setAgentSkillInstalling] = useState(false);
+  const [agentSkillStatus, setAgentSkillStatus] =
+    useState<AgentSkillStatus>(defaultAgentSkillStatus);
   const [preferences, setPreferences] = useState<CodiffPreferences>(defaultPreferences);
   const [reviewComments, setReviewComments] = useState<ReadonlyArray<ReviewComment>>([]);
   const [reloadDeltaPaths, setReloadDeltaPaths] = useState<ReadonlySet<string>>(() => new Set());
@@ -182,6 +184,7 @@ export default function App() {
   const walkthroughErrorRef = useRef<WalkthroughError | null>(null);
   const [commandBarVisible, setCommandBarVisible] = useState(false);
   const [commandBarCommands, setCommandBarCommands] = useState<ReadonlyArray<Command>>([]);
+  const [shortcutsHelpVisible, setShortcutsHelpVisible] = useState(false);
   const commandRegistryRef = useRef(createCommandRegistry());
 
   const bumpItemVersion = useCallback((path: string) => {
@@ -328,13 +331,13 @@ export default function App() {
       }
       setLaunchOptions(nextLaunchOptions);
 
-      const nextCodexSkillStatus = await window.codiff
-        .getCodexSkillStatus()
-        .catch(() => defaultCodexSkillStatus);
+      const nextAgentSkillStatus = await window.codiff
+        .getAgentSkillStatus()
+        .catch(() => defaultAgentSkillStatus);
       if (canceled) {
         return;
       }
-      setCodexSkillStatus(nextCodexSkillStatus);
+      setAgentSkillStatus(nextAgentSkillStatus);
 
       const nextTerminalHelperStatus = await window.codiff
         .getTerminalHelperStatus()
@@ -798,6 +801,10 @@ export default function App() {
     });
   }, []);
 
+  const toggleWordWrap = useCallback(() => {
+    void window.codiff.setWordWrap(!preferencesRef.current.wordWrap).catch(() => {});
+  }, []);
+
   const expandSidebar = useCallback(() => {
     setSidebarCollapsed(false);
     writeSidebarCollapsed(false);
@@ -832,6 +839,14 @@ export default function App() {
       if (matchesShortcut(event, codiffConfig.keymap, 'toggleSidebar')) {
         event.preventDefault();
         toggleSidebar();
+        return;
+      }
+      if (
+        !isNativeInputTarget(event.target) &&
+        matchesShortcut(event, codiffConfig.keymap, 'toggleWordWrap')
+      ) {
+        event.preventDefault();
+        toggleWordWrap();
         return;
       }
       if (matchesShortcut(event, codiffConfig.keymap, 'diffSearch')) {
@@ -870,7 +885,39 @@ export default function App() {
     openSelectedFile,
     sidebarCollapsed,
     toggleSidebar,
+    toggleWordWrap,
   ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || isNativeInputTarget(event.target)) {
+        return;
+      }
+      if (matchesShortcut(event, codiffConfig.keymap, 'shortcutsHelp')) {
+        event.preventDefault();
+        setShortcutsHelpVisible(true);
+      }
+    };
+
+    // The overlay is held open while Shift+? is pressed, so dismiss it the
+    // moment either key is released (or the window loses focus mid-hold).
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === '?' || event.key === '/' || event.key === 'Shift') {
+        setShortcutsHelpVisible(false);
+      }
+    };
+
+    const handleBlur = () => setShortcutsHelpVisible(false);
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [codiffConfig.keymap]);
 
   useEffect(() => window.codiff.onFindInDiffs(openDiffSearch), [openDiffSearch]);
 
@@ -1313,10 +1360,9 @@ export default function App() {
       registry.register({
         description: () =>
           preferencesRef.current.wordWrap ? 'Disable Word Wrap' : 'Enable Word Wrap',
-        execute: () => {
-          void window.codiff.setWordWrap(!preferencesRef.current.wordWrap).catch(() => {});
-        },
+        execute: toggleWordWrap,
         id: 'toggle-word-wrap',
+        keymapAction: 'toggleWordWrap',
         title: 'Toggle Word Wrap',
       }),
       registry.register({
@@ -1340,6 +1386,7 @@ export default function App() {
     openSelectedFile,
     reloadWindow,
     toggleSidebar,
+    toggleWordWrap,
   ]);
 
   const toggleCollapsed = useCallback(
@@ -1716,18 +1763,22 @@ export default function App() {
       });
   }, []);
 
-  const installCodexSkill = useCallback(() => {
-    setCodexSkillInstalling(true);
+  const installAgentSkill = useCallback(() => {
+    setAgentSkillInstalling(true);
     window.codiff
-      .installCodexSkill()
-      .then((status) => setCodexSkillStatus(status))
+      .installAgentSkill()
+      .then((status) => setAgentSkillStatus(status))
       .catch(() => {
-        setCodexSkillStatus(defaultCodexSkillStatus);
+        setAgentSkillStatus(defaultAgentSkillStatus);
       })
       .finally(() => {
-        setCodexSkillInstalling(false);
+        setAgentSkillInstalling(false);
       });
   }, []);
+
+  const activeAgentBackend = launchOptions.agentBackend ?? codiffConfig.settings.agentBackend;
+  const agentLabel = getAgentLabel(activeAgentBackend);
+  const agentSkillLabel = `${agentLabel} Skill`;
 
   if (loadError) {
     const showFirstRun =
@@ -1740,10 +1791,11 @@ export default function App() {
         <div className="empty-panel squircle">
           {showFirstRun ? (
             <FirstRunPanel
-              codexSkillInstalled={codexSkillStatus.installed}
-              codexSkillInstalling={codexSkillInstalling}
+              agentSkillInstalled={agentSkillStatus.installed}
+              agentSkillInstalling={agentSkillInstalling}
+              agentSkillLabel={agentSkillLabel}
               installing={terminalHelperInstalling}
-              onInstallCodexSkill={installCodexSkill}
+              onInstallAgentSkill={installAgentSkill}
               onInstallTerminalHelper={installTerminalHelper}
             />
           ) : (
@@ -1770,11 +1822,11 @@ export default function App() {
   const hasDiffSearchQuery = diffSearchQuery.trim().length > 0;
   const isPullRequest = state.source.type === 'pull-request';
   const isSwitchingSource = pendingSource != null;
-  const showCodexUnavailablePanel =
+  const showAgentUnavailablePanel =
     sidebarMode === 'walkthrough' &&
     !walkthrough &&
     !walkthroughLoading &&
-    walkthroughError?.code === 'CODEX_NOT_FOUND';
+    (walkthroughError?.code === 'CODEX_NOT_FOUND' || walkthroughError?.code === 'CLAUDE_NOT_FOUND');
 
   const sidebarLabel = `${compactPath(state.root)}${state.branch ? ` (${state.branch})` : ''}`;
   const sidebarSourceLabel =
@@ -1841,6 +1893,7 @@ export default function App() {
         onClose={() => setCommandBarVisible(false)}
         visible={commandBarVisible}
       />
+      <KeyboardShortcutsHelp keymap={codiffConfig.keymap} visible={shortcutsHelpVisible} />
       {!isSwitchingSource ? (
         <div className="review-action-bar">
           <CopyCommentsButton
@@ -1921,10 +1974,14 @@ export default function App() {
       <main className="review">
         {isSwitchingSource ? (
           <ReviewSourceLoading />
-        ) : showCodexUnavailablePanel ? (
+        ) : showAgentUnavailablePanel ? (
           <div className="empty-state">
             <div className="empty-panel squircle">
-              <CodexUnavailablePanel onShowFiles={() => setSidebarMode('tree')} />
+              <AgentUnavailablePanel
+                agentLabel={agentLabel}
+                onShowFiles={() => setSidebarMode('tree')}
+                reason={walkthroughError?.reason}
+              />
             </div>
           </div>
         ) : state.files.length === 0 ? (
@@ -1962,6 +2019,8 @@ export default function App() {
         ) : (
           <ReviewCodeView
             activeSearchMatch={activeDiffSearchMatch}
+            agentId={activeAgentBackend}
+            agentLabel={agentLabel}
             collapsed={collapsed}
             comments={visibleReviewComments}
             commitMetadata={state.source.type === 'commit' ? (state.commitMetadata ?? null) : null}

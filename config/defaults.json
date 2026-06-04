@@ -1,5 +1,7 @@
 {
   "settings": {
+    "agentBackend": "codex",
+    "claudeModel": "claude-sonnet-4-6",
     "copyCommentsOnClose": false,
     "diffStyle": "split",
     "editorCommand": "",
@@ -19,7 +21,9 @@
     "nextSearchMatch": "Enter",
     "openFile": "Mod+k",
     "prevSearchMatch": "Shift+Enter",
+    "shortcutsHelp": "Shift+?",
     "submitComment": "Mod+Enter",
-    "toggleSidebar": "Mod+b"
+    "toggleSidebar": "Mod+b",
+    "toggleWordWrap": "Alt+z"
   }
 }
