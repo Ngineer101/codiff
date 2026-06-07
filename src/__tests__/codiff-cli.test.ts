@@ -189,6 +189,18 @@ test('parseArguments recognizes Codex walkthrough seed options', () => {
   });
 });
 
+test('parseArguments recognizes a pre-authored walkthrough file', () => {
+  expect(parseArguments(['-w', '--walkthrough-file', '.codiff/walkthrough.json'])).toMatchObject({
+    walkthrough: true,
+    walkthroughFilePath: resolve('.codiff/walkthrough.json'),
+  });
+});
+
+test('parseArguments recognizes the walkthrough guide flag', () => {
+  expect(parseArguments(['--walkthrough-guide'])).toMatchObject({ walkthroughGuide: true });
+  expect(parseArguments([])).not.toHaveProperty('walkthroughGuide');
+});
+
 test('parseArguments recognizes Claude walkthrough seed options and the agent override', () => {
   expect(
     parseArguments([
@@ -771,4 +783,31 @@ test('codiff-app -v prints version and exits 0', async () => {
     encoding: 'utf8',
   });
   expect(stdout).toMatch(/^codiff v\d+\.\d+\.\d+\n$/);
+});
+
+test('codiff --walkthrough-guide prints the guide and embedded schema, then exits 0', async () => {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ['bin/codiff.js', '--walkthrough-guide'],
+    {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+    },
+  );
+
+  // The authoring prose...
+  expect(stdout).toContain('Narrative walkthrough — authoring guide');
+  expect(stdout).toContain('segments');
+  expect(stdout).toContain('orders');
+  // ...followed by the live JSON schema, embedded as a fenced block.
+  expect(stdout).toContain('```json');
+  expect(stdout).toContain('"defaultOrder"');
+  expect(stdout).toContain('"const": 2');
+});
+
+test('the walkthrough authoring guide file exists and is non-trivial', async () => {
+  const guide = await readFile(resolve('bin/walkthrough-guide.md'), 'utf8');
+  expect(guide.length).toBeGreaterThan(500);
+  expect(guide).toContain('segments');
+  expect(guide).toContain('orders');
 });

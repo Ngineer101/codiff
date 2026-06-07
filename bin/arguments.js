@@ -43,6 +43,17 @@ export const flagDefinitions = [
     name: 'walkthrough-context',
     type: 'string',
   },
+  {
+    argument: '<file>',
+    description: 'Open a pre-authored narrative walkthrough JSON file.',
+    name: 'walkthrough-file',
+    type: 'string',
+  },
+  {
+    description: 'Print the narrative walkthrough authoring guide and schema, then exit.',
+    name: 'walkthrough-guide',
+    type: 'boolean',
+  },
 ];
 
 export const usageExamples = [
@@ -267,6 +278,8 @@ export const parseArguments = (args) => {
   let sourceCandidate = null;
   const walkthroughContextPath =
     typeof values['walkthrough-context'] === 'string' ? values['walkthrough-context'] : null;
+  const walkthroughFilePath =
+    typeof values['walkthrough-file'] === 'string' ? values['walkthrough-file'] : null;
 
   for (let index = 0; index < positionals.length; index += 1) {
     const arg = positionals[index];
@@ -323,6 +336,8 @@ export const parseArguments = (args) => {
     requestedPath: resolve(requestedPath ?? process.cwd()),
     version: values.version === true,
     walkthrough: values.walkthrough === true,
+    ...(values['walkthrough-guide'] === true ? { walkthroughGuide: true } : {}),
     ...(walkthroughContextPath ? { walkthroughContextPath: resolve(walkthroughContextPath) } : {}),
+    ...(walkthroughFilePath ? { walkthroughFilePath: resolve(walkthroughFilePath) } : {}),
   };
 };
