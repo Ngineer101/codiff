@@ -187,47 +187,12 @@ export type TerminalHelperStatus = {
   path: string;
 };
 
-export type WalkthroughFile = {
-  action: 'review' | 'scan' | 'skim';
-  context: string;
-  impact: 'wide' | 'contained' | 'mechanical';
-  path: string;
-  reason: string;
-};
-
-export type WalkthroughGroup = {
-  files: ReadonlyArray<WalkthroughFile>;
-  reason: string;
-  title: string;
-};
-
-export type Walkthrough = {
-  groups: ReadonlyArray<WalkthroughGroup>;
-  summary: {
-    focus: string;
-    skim: string;
-  };
-  version: 1;
-};
-
-export type WalkthroughResult =
-  | {
-      status: 'ready';
-      walkthrough: Walkthrough;
-    }
-  | {
-      code?: 'CODEX_NOT_FOUND' | 'CLAUDE_NOT_FOUND';
-      reason: string;
-      status: 'unavailable';
-    };
-
 /**
- * Narrative Walkthrough (version 2). A richer, story-shaped walkthrough than the
- * file-ordering {@link Walkthrough}. It separates order-independent *segments*
- * (addressable slices of the live diff) from one or more *orders* (reading views
- * over those segments — e.g. key-changes-first vs results-first). The diff content
- * itself is never embedded: a segment anchors into the live diff codiff computes
- * from the repository.
+ * Narrative Walkthrough. It separates order-independent *segments* (addressable
+ * slices of the live diff) from one or more *orders* (reading views over those
+ * segments, e.g. key-changes-first vs results-first). The diff content itself is
+ * never embedded: a segment anchors into the live diff codiff computes from the
+ * repository.
  */
 export type WalkthroughIcon = 'bug' | 'wrench' | 'path' | 'flask' | 'beaker' | 'doc' | 'gear';
 
@@ -310,6 +275,8 @@ export type WalkthroughStop = {
   phaseId: string;
   /** Agent narration (markdown / inline code). */
   prose: string;
+  /** Additional segments that render under this same conceptual stop. */
+  relatedSegmentIds?: ReadonlyArray<string>;
   segmentId: string;
   /** Overrides the segment's title for this order. */
   title?: string;
@@ -348,8 +315,8 @@ export type WalkthroughCommit = {
    * or ask the agent to regenerate it for a narrowed file selection.
    */
   body?: string;
-  /** Seed for the human-authored subject line (line 1 of the message). */
-  subjectSeed?: string;
+  /** Suggested first line for the commit message. */
+  title?: string;
 };
 
 export type NarrativeWalkthrough = {
@@ -387,6 +354,7 @@ export type NarrativeWalkthroughResult =
       walkthrough: NarrativeWalkthrough;
     }
   | {
+      code?: 'CODEX_NOT_FOUND' | 'CLAUDE_NOT_FOUND';
       reason: string;
       status: 'unavailable';
     };
@@ -451,11 +419,11 @@ export type ReviewAssistantRequest = {
   };
   source?: ReviewSource;
   walkthroughNote?: {
-    action: WalkthroughFile['action'];
+    action: 'review' | 'scan' | 'skim';
     context: string;
     groupReason: string;
     groupTitle: string;
-    impact: WalkthroughFile['impact'];
+    impact: 'wide' | 'contained' | 'mechanical';
     reason: string;
   };
 };
@@ -521,6 +489,7 @@ export type CodiffPreferences = {
   showOutdated: boolean;
   showWhitespace: boolean;
   theme: CodiffTheme;
+  walkthroughOrder: string;
   wordWrap: boolean;
 };
 

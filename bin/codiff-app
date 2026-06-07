@@ -38,7 +38,7 @@ show_help() {
   printf '  %-22s%s%s%s\n' "--claude-session <id>" "$gray" "Attach Claude Code session metadata to a walkthrough." "$reset"
   printf '  %-22s%s%s%s\n' "--help, -h" "$gray" "Show this help message and exit." "$reset"
   printf '  %-22s%s%s%s\n' "--version, -v" "$gray" "Show version number and exit." "$reset"
-  printf '  %-22s%s%s%s\n' "--walkthrough, -w" "$gray" "Start with an LLM-generated review walkthrough." "$reset"
+  printf '  %-22s%s%s%s\n' "--walkthrough, -w" "$gray" "Start with an LLM-generated narrative walkthrough." "$reset"
   printf '  %-22s%s%s%s\n' "--walkthrough-context <file>" "$gray" "Seed a walkthrough with Codex conversation context JSON." "$reset"
   printf '  %-22s%s%s%s\n' "--walkthrough-guide" "$gray" "Print the narrative walkthrough authoring guide and schema, then exit." "$reset"
   printf '\n'
@@ -49,7 +49,7 @@ show_help() {
   printf '  %-22s%s%s%s\n' "codiff a1b2c3d" "$gray" "Review a specific commit." "$reset"
   printf '  %-22s%s%s%s\n' "codiff '#75'" "$gray" "Review pull request #75." "$reset"
   printf '  %-22s%s%s%s\n' "codiff pr 75" "$gray" "Review pull request #75 (alternate syntax)." "$reset"
-  printf '  %-22s%s%s%s\n' "codiff -w" "$gray" "Start with an LLM walkthrough." "$reset"
+  printf '  %-22s%s%s%s\n' "codiff -w" "$gray" "Start with an LLM narrative walkthrough." "$reset"
   printf '  %-22s%s%s%s\n' "codiff -w a1b2c3d" "$gray" "Walkthrough a specific commit." "$reset"
 }
 

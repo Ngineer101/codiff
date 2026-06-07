@@ -40,7 +40,7 @@ Review a specific commit:
 codiff a1b2c3d
 ```
 
-Start with an LLM-generated walkthrough order:
+Start with an LLM-generated narrative walkthrough:
 
 ```bash
 codiff -w
@@ -152,23 +152,17 @@ Claude Code rides your existing `claude` login (subscription or `ANTHROPIC_API_K
 once and complete `/login` if you have not already.
 
 To drive Codiff from your agent, install its skills from the application menu (`Install Codex Skill`
-or `Install Claude Code Skill`). Each action installs both bundled skills for that agent — `codiff`
-and `walkthrough` — so you only install once, and Codiff updates keep them current. Invoke them from
-the agent:
+or `Install Claude Code Skill`). Codiff updates keep the installed skill current. Invoke it from the
+agent:
 
 ```text
-$codiff       /codiff        # open Codiff seeded with the current session
-$walkthrough  /walkthrough   # author a narrative walkthrough of the change
+$codiff       /codiff        # author a narrative walkthrough and open Codiff
 ```
 
-`codiff` opens Codiff with `codiff -w --codex-session <id>` (or `--agent claude --claude-session
-<id>`). Codiff then generates its normal diff digest and runs the walkthrough prompt seeded with
-that session's conversation, so the walkthrough sees the original context without a lossy summary
-handoff.
-
-`walkthrough` asks Codiff for the current authoring guide (`codiff --walkthrough-guide`), writes a
-narrative walkthrough JSON to a temporary file, and opens Codiff on it with `--walkthrough-file`.
-Because the guidance lives in Codiff, the installed skill stays a thin shim.
+`codiff` asks Codiff for the current authoring guide (`codiff --walkthrough-guide`), writes a
+narrative walkthrough JSON to a temporary file, and opens Codiff on it with `--walkthrough-file`
+plus the current session id. Because the guidance lives in Codiff, the installed skill stays a thin
+shim while the walkthrough sees the original conversation context without a lossy summary handoff.
 
 ## Development
 

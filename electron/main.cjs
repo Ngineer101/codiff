@@ -63,8 +63,10 @@ const {
   validateWindowStateOnScreen,
   writeWindowState,
 } = require('./window-state.cjs');
-const { readWalkthrough } = require('./walkthrough.cjs');
-const { normalizeNarrativeWalkthrough } = require('./narrative-walkthrough.cjs');
+const {
+  normalizeNarrativeWalkthrough,
+  readNarrativeWalkthrough,
+} = require('./narrative-walkthrough.cjs');
 
 /**
  * @typedef {import('../src/config/types.ts').CodiffConfig} CodiffConfig
@@ -458,65 +460,100 @@ const buildApplicationMenu = () =>
         label: 'View',
         submenu: [
           {
-            checked: config.settings.diffStyle === 'split',
-            click: () => {
-              updateConfig({
-                settings: { ...config.settings, diffStyle: 'split' },
-              });
-            },
-            label: 'Split Diff',
-            type: 'radio',
+            label: 'Diff',
+            submenu: [
+              {
+                checked: config.settings.diffStyle === 'split',
+                click: () => {
+                  updateConfig({
+                    settings: { ...config.settings, diffStyle: 'split' },
+                  });
+                },
+                label: 'Split',
+                type: 'radio',
+              },
+              {
+                checked: config.settings.diffStyle === 'unified',
+                click: () => {
+                  updateConfig({
+                    settings: { ...config.settings, diffStyle: 'unified' },
+                  });
+                },
+                label: 'Unified',
+                type: 'radio',
+              },
+              { type: 'separator' },
+              {
+                checked: config.settings.wordWrap,
+                click: (menuItem) => {
+                  updateConfig({
+                    settings: { ...config.settings, wordWrap: menuItem.checked },
+                  });
+                },
+                label: 'Word Wrap',
+                type: 'checkbox',
+              },
+              {
+                checked: config.settings.showWhitespace,
+                click: (menuItem) => {
+                  updateConfig({
+                    settings: { ...config.settings, showWhitespace: menuItem.checked },
+                  });
+                },
+                label: 'Show Whitespace',
+                type: 'checkbox',
+              },
+            ],
           },
           {
-            checked: config.settings.diffStyle === 'unified',
-            click: () => {
-              updateConfig({
-                settings: { ...config.settings, diffStyle: 'unified' },
-              });
-            },
-            label: 'Unified Diff',
-            type: 'radio',
-          },
-          { type: 'separator' },
-          {
-            checked: config.settings.wordWrap,
-            click: (menuItem) => {
-              updateConfig({
-                settings: { ...config.settings, wordWrap: menuItem.checked },
-              });
-            },
-            label: 'Word Wrap',
-            type: 'checkbox',
-          },
-          {
-            checked: config.settings.showWhitespace,
-            click: (menuItem) => {
-              updateConfig({
-                settings: { ...config.settings, showWhitespace: menuItem.checked },
-              });
-            },
-            label: 'Show Whitespace',
-            type: 'checkbox',
+            label: 'Walkthrough',
+            submenu: [
+              {
+                checked: config.settings.walkthroughOrder !== 'results',
+                click: () => {
+                  updateConfig({
+                    settings: { ...config.settings, walkthroughOrder: 'keys' },
+                  });
+                },
+                label: 'Key Changes',
+                type: 'radio',
+              },
+              {
+                checked: config.settings.walkthroughOrder === 'results',
+                click: () => {
+                  updateConfig({
+                    settings: { ...config.settings, walkthroughOrder: 'results' },
+                  });
+                },
+                label: 'Results First',
+                type: 'radio',
+              },
+            ],
           },
           {
-            checked: config.settings.showOutdated,
-            click: (menuItem) => {
-              updateConfig({
-                settings: { ...config.settings, showOutdated: menuItem.checked },
-              });
-            },
-            label: 'Show Outdated Comments',
-            type: 'checkbox',
-          },
-          {
-            checked: config.settings.copyCommentsOnClose,
-            click: (menuItem) => {
-              updateConfig({
-                settings: { ...config.settings, copyCommentsOnClose: menuItem.checked },
-              });
-            },
-            label: 'Copy Comments on Close',
-            type: 'checkbox',
+            label: 'Comments',
+            submenu: [
+              {
+                checked: config.settings.showOutdated,
+                click: (menuItem) => {
+                  updateConfig({
+                    settings: { ...config.settings, showOutdated: menuItem.checked },
+                  });
+                },
+                label: 'Show Outdated Comments',
+                type: 'checkbox',
+              },
+              {
+                checked: config.settings.copyCommentsOnClose,
+                click: (menuItem) => {
+                  updateConfig({
+                    settings: { ...config.settings, copyCommentsOnClose: menuItem.checked },
+                  });
+                },
+                label: 'Copy Comments on Close',
+                type: 'checkbox',
+              },
+            ],
           },
           {
             label: 'Theme',
@@ -865,36 +902,26 @@ ipcMain.handle('codiff:installTerminalHelper', async (event) => {
   return getTerminalHelperStatus();
 });
 
-ipcMain.handle('codiff:getWalkthrough', async (event, source) => {
-  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
-  const launchOptions = windowLaunchOptions.get(event.sender.id);
-  const state = await readRepositoryState(repositoryPath, source || launchOptions?.source);
-  const agent = resolveWindowAgent(event.sender.id);
-  const walkthroughContext = mergeWalkthroughContexts(
-    launchOptions?.walkthroughContext,
-    agent.readSessionContext(launchOptions?.[agent.sessionLaunchOptionKey]),
-  );
-  return readWalkthrough(state, agent, getAgentOptions(agent), walkthroughContext);
-});
-
-// Load a pre-authored narrative walkthrough (--walkthrough-file) and repair it against the
-// live diff. Returns null when no file was supplied so the renderer can fall back to the
-// agent-ordered walkthrough.
 ipcMain.handle('codiff:getNarrativeWalkthrough', async (event, source) => {
   const launchOptions = windowLaunchOptions.get(event.sender.id);
-  const walkthroughFile = launchOptions?.walkthroughFile;
-  if (!walkthroughFile) {
-    return null;
-  }
-
   try {
     const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
     const state = await readRepositoryState(repositoryPath, source || launchOptions?.source);
-    const input = JSON.parse(readFileSync(walkthroughFile, 'utf8'));
-    return {
-      status: 'ready',
-      walkthrough: normalizeNarrativeWalkthrough(input, state.files),
-    };
+    const walkthroughFile = launchOptions?.walkthroughFile;
+    if (walkthroughFile) {
+      const input = JSON.parse(readFileSync(walkthroughFile, 'utf8'));
+      return {
+        status: 'ready',
+        walkthrough: normalizeNarrativeWalkthrough(input, state.files),
+      };
+    }
+
+    const agent = resolveWindowAgent(event.sender.id);
+    const walkthroughContext = mergeWalkthroughContexts(
+      launchOptions?.walkthroughContext,
+      agent.readSessionContext(launchOptions?.[agent.sessionLaunchOptionKey]),
+    );
+    return readNarrativeWalkthrough(state, agent, getAgentOptions(agent), walkthroughContext);
   } catch (error) {
     return {
       reason: error instanceof Error ? error.message : String(error),
@@ -969,6 +996,15 @@ ipcMain.handle('codiff:setDiffStyle', (_event, value) => {
 
 ipcMain.handle('codiff:setShowOutdated', (_event, value) => {
   updateConfig({ settings: { ...config.settings, showOutdated: Boolean(value) } });
+});
+
+ipcMain.handle('codiff:setWalkthroughOrder', (_event, value) => {
+  updateConfig({
+    settings: {
+      ...config.settings,
+      walkthroughOrder: typeof value === 'string' && value.length > 0 ? value : 'keys',
+    },
+  });
 });
 
 ipcMain.handle('codiff:setWordWrap', (_event, value) => {

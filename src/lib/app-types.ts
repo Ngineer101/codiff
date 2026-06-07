@@ -4,13 +4,12 @@ import type {
   CommitMetadata,
   DiffSection,
   NarrativeWalkthrough,
+  NarrativeWalkthroughResult,
   PullRequestExistingReviewComment,
   ReviewSource,
-  Walkthrough,
-  WalkthroughResult,
 } from '../types.ts';
 
-export type WalkthroughError = Extract<WalkthroughResult, { status: 'unavailable' }>;
+export type WalkthroughError = Extract<NarrativeWalkthroughResult, { status: 'unavailable' }>;
 
 export type ReviewCommentAnnotationMetadata = {
   commentIds: ReadonlyArray<string>;
@@ -104,23 +103,22 @@ export type SidebarMode = 'tree' | 'walkthrough' | 'history';
 export type PullRequestSource = Extract<ReviewSource, { type: 'pull-request' }>;
 
 export type WalkthroughNote = {
-  action: Walkthrough['groups'][number]['files'][number]['action'];
+  action: 'review' | 'scan' | 'skim';
   context: string;
   groupReason: string;
   groupTitle: string;
-  impact: Walkthrough['groups'][number]['files'][number]['impact'];
+  impact: 'wide' | 'contained' | 'mechanical';
   order: number;
   reason: string;
 };
 
 export type SourceSession = {
   collapsed: Set<string>;
-  /** Populated by the interface phase from a --walkthrough-file document. */
+  /** Populated by a generated or pre-authored narrative walkthrough document. */
   narrativeWalkthrough?: NarrativeWalkthrough | null;
   reviewComments: ReadonlyArray<ReviewComment>;
   selectedPath: string | null;
   viewed: Record<string, string>;
-  walkthrough: Walkthrough | null;
   walkthroughError: WalkthroughError | null;
 };
 

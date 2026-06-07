@@ -18,8 +18,8 @@ const { dirname, join } = require('node:path');
  */
 
 /**
- * Installs every skill an agent bundles (e.g. `codiff` and `walkthrough`) with a
- * single action: each is symlinked from the app into the agent's skills directory.
+ * Installs every skill an agent bundles with a single action: each is symlinked
+ * from the app into the agent's skills directory.
  * @param {{
  *   app: import('electron').App;
  *   dialog: import('electron').Dialog;

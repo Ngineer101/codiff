@@ -1,3 +1,4 @@
+import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react/ArrowLeft';
 import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react/ArrowRight';
 import { ArrowsClockwiseIcon as ArrowsClockwise } from '@phosphor-icons/react/ArrowsClockwise';
 import { BugIcon as Bug } from '@phosphor-icons/react/Bug';
@@ -32,6 +33,7 @@ export const phaseIcons: Record<WalkthroughIcon, ComponentType<IconProps>> = {
 };
 
 export {
+  ArrowLeft,
   ArrowRight,
   ArrowsClockwise,
   CaretLeft,

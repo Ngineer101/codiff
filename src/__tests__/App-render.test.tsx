@@ -12,7 +12,13 @@ import {
   getReloadSelectionPath,
   writeReloadSelection,
 } from '../lib/reload-selection.ts';
-import type { ChangedFile, CommitMetadata, RepositoryState, ReviewSource } from '../types.ts';
+import type {
+  ChangedFile,
+  CommitMetadata,
+  NarrativeWalkthrough,
+  RepositoryState,
+  ReviewSource,
+} from '../types.ts';
 
 const reactActEnvironment = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
@@ -25,6 +31,8 @@ reactActEnvironment.ResizeObserver ??= class ResizeObserver {
   observe() {}
   unobserve() {}
 };
+HTMLElement.prototype.scrollBy ??= function scrollBy() {};
+HTMLElement.prototype.scrollTo ??= function scrollTo() {};
 class StubWorker extends EventTarget {
   constructor(_scriptURL: string | URL, _options?: WorkerOptions) {
     super();
@@ -135,7 +143,10 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     repositoryPathProvided: true,
     walkthrough: false,
   })),
-  getNarrativeWalkthrough: vi.fn(async () => null),
+  getNarrativeWalkthrough: vi.fn(async () => ({
+    reason: 'Unavailable in tests.',
+    status: 'unavailable' as const,
+  })),
   getPreferences: vi.fn(async () => ({
     agentBackend: 'codex' as const,
     claudeModel: defaultSettings.claudeModel,
@@ -147,6 +158,7 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     showOutdated: false,
     showWhitespace: false,
     theme: 'system' as const,
+    walkthroughOrder: 'keys',
     wordWrap: false,
   })),
   getRepositoryHistory: vi.fn(async () => ({
@@ -158,10 +170,6 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     command: 'codiff',
     installed: true,
     path: '/usr/local/bin/codiff',
-  })),
-  getWalkthrough: vi.fn(async () => ({
-    reason: 'Unavailable in tests.',
-    status: 'unavailable' as const,
   })),
   installAgentSkill: vi.fn(async () => ({
     installed: true,
@@ -180,6 +188,7 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
   openFile: vi.fn(async () => {}),
   setDiffStyle: vi.fn(async () => {}),
   setShowOutdated: vi.fn(async () => {}),
+  setWalkthroughOrder: vi.fn(async () => {}),
   setWordWrap: vi.fn(async () => {}),
   showInFolder: vi.fn(async () => {}),
   submitPullRequestComment: vi.fn(async () => {
@@ -571,6 +580,145 @@ test('commit details render inline in the diff view', async () => {
   }
 });
 
+test('narrative walkthrough stops do not repeat commit details', async () => {
+  const changedFile = createChangedFile('src/app.ts');
+  const source = { ref: 'abc1234', type: 'commit' } satisfies ReviewSource;
+  const commitMetadata = {
+    author: {
+      date: '2026-01-01T12:00:00Z',
+      email: 'author@example.com',
+      name: 'Author',
+    },
+    body: 'Detailed commit body.',
+    committer: {
+      date: '2026-01-01T13:00:00Z',
+      email: 'committer@example.com',
+      name: 'Committer',
+    },
+    files: [
+      {
+        additions: 1,
+        binary: false,
+        deletions: 1,
+        path: 'src/app.ts',
+        status: 'modified' as const,
+      },
+    ],
+    parents: ['parent-sha'],
+    ref: 'abc1234',
+    refs: ['main'],
+    shortRef: 'abc1234',
+    signature: {
+      status: 'N',
+    },
+    stats: {
+      additions: 1,
+      binaryFiles: 0,
+      deletions: 1,
+      files: 1,
+      renamedFiles: 0,
+    },
+    subject: 'Commit subject',
+    trailers: [],
+  } satisfies CommitMetadata;
+  const narrativeWalkthrough = {
+    agent: 'codex',
+    defaultOrder: 'keys',
+    focus: 'Focus.',
+    generatedAt: '2026-06-07T00:00:00.000Z',
+    kind: 'narrative',
+    orders: [
+      {
+        id: 'keys',
+        label: 'Key changes',
+        phases: [
+          {
+            blurb: 'Review the implementation.',
+            icon: 'gear',
+            id: 'impl',
+            n: 1,
+            title: 'Implementation',
+          },
+        ],
+        rest: [],
+        restBlurb: 'Nothing else.',
+        restLabel: 'The rest',
+        sequence: [
+          {
+            importance: 'critical',
+            phaseId: 'impl',
+            prose: 'Review this file without repeating the commit header.',
+            segmentId: 's1',
+            title: 'Implementation path',
+          },
+        ],
+        tagline: 'Follow the implementation.',
+      },
+    ],
+    repo: { branch: 'main', root: '/repo' },
+    segments: [
+      {
+        added: 1,
+        anchor: { display: 'src/app.ts', sectionId: 'src/app.ts:unstaged', side: 'both' },
+        deleted: 1,
+        granularity: 'file',
+        id: 's1',
+        path: 'src/app.ts',
+        status: 'modified',
+      },
+    ],
+    source,
+    title: 'Narrative',
+    version: 2,
+  } satisfies NarrativeWalkthrough;
+
+  window.codiff = createCodiffMock({
+    getLaunchOptions: vi.fn(async () => ({
+      repositoryPathProvided: true,
+      source,
+      walkthrough: true,
+      walkthroughFile: '/tmp/walkthrough.json',
+    })),
+    getNarrativeWalkthrough: vi.fn(async () => ({
+      status: 'ready' as const,
+      walkthrough: narrativeWalkthrough,
+    })),
+    getRepositoryState: vi.fn(async () => ({
+      ...repositoryState,
+      commitMetadata,
+      files: [changedFile],
+      source,
+    })),
+  });
+
+  const container = document.createElement('div');
+  document.body.append(container);
+  let root: Root | null = null;
+
+  try {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.loading')).toBeNull();
+      expect(container.querySelector('.wt-stop-block')).not.toBeNull();
+    });
+
+    expect(container.querySelector('.codiff-commit-details-header')).toBeNull();
+    expect(container.querySelector('.commit-details-panel')).toBeNull();
+    expect(container.querySelector('.wt-stage-title')?.textContent).toContain(
+      'Implementation path',
+    );
+  } finally {
+    if (root) {
+      await act(async () => root?.unmount());
+    }
+    container.remove();
+  }
+});
+
 test('repository changes show the update banner without refreshing the working tree', async () => {
   let onRepositoryChanged: ((change: { root: string }) => void) | null = null;
   const getRepositoryState = vi.fn(async () => repositoryState);
@@ -632,7 +780,7 @@ test('walkthrough launch errors stay on the walkthrough tab without automatic re
     ],
     status: 'modified',
   } satisfies ChangedFile;
-  const getWalkthrough = vi.fn(async () => ({
+  const getNarrativeWalkthrough = vi.fn(async () => ({
     reason: 'Codex walkthrough timed out.',
     status: 'unavailable' as const,
   }));
@@ -642,11 +790,11 @@ test('walkthrough launch errors stay on the walkthrough tab without automatic re
       repositoryPathProvided: true,
       walkthrough: true,
     })),
+    getNarrativeWalkthrough,
     getRepositoryState: vi.fn(async () => ({
       ...repositoryState,
       files: [changedFile],
     })),
-    getWalkthrough,
   });
 
   const container = document.createElement('div');
@@ -671,7 +819,7 @@ test('walkthrough launch errors stay on the walkthrough tab without automatic re
     expect(getTab('Walkthrough')?.getAttribute('aria-selected')).toBe('true');
     expect(container.querySelector('.sidebar-walkthrough-status')).not.toBeNull();
     expect(container.querySelector('.sidebar .file-tree-shell')).toBeNull();
-    expect(getWalkthrough).toHaveBeenCalledTimes(1);
+    expect(getNarrativeWalkthrough).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       getTab('Tree')?.click();
@@ -684,7 +832,7 @@ test('walkthrough launch errors stay on the walkthrough tab without automatic re
 
     expect(container.textContent).toContain('Walkthrough unavailable');
     expect(container.querySelector('.sidebar .file-tree-shell')).toBeNull();
-    expect(getWalkthrough).toHaveBeenCalledTimes(1);
+    expect(getNarrativeWalkthrough).toHaveBeenCalledTimes(1);
   } finally {
     if (root) {
       await act(async () => root?.unmount());

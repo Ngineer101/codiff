@@ -1,32 +1,55 @@
 ---
 name: codiff
-description: Open Codiff from the current Claude Code session with a walkthrough seeded by the active conversation. Use when the user writes "/codiff", "show me codiff", "open Codiff", or asks to review the current changes in Codiff with Claude Code context.
+description: Author a narrative Codiff walkthrough JSON from the current change and open it in Codiff. Use when the user writes "/codiff", "show me codiff", "open Codiff", "make a walkthrough", or asks to review the staged work as a guided narrative in Codiff.
 metadata:
-  short-description: Open Codiff with session context
+  short-description: Generate a narrative walkthrough and open Codiff
 ---
 
 # Codiff
 
-Open Codiff with a walkthrough seeded by the active Claude Code conversation.
+Author a **narrative walkthrough** of the current change as a JSON document, then open
+Codiff pointed at it. You — the agent running this skill — write the JSON yourself, because
+you already hold the conversation that produced the change.
+
+Codiff owns the format and the authoring guidance, so it stays current as Codiff updates.
+This skill is just the handoff: fetch the guide, author the document, open Codiff.
 
 ## Workflow
 
-1. Run the bundled launcher from this skill directory:
+1. **Get the current guidance from Codiff.** It explains the data model, how to think about
+   the document, and prints the JSON schema:
 
-```bash
-node scripts/open-codiff.mjs
-```
+   ```bash
+   node scripts/open-codiff.mjs --guide
+   ```
 
-2. Forward any explicit user target after the command:
+   Follow what it says. (Everything below is just the handoff around it.)
 
-```bash
-node scripts/open-codiff.mjs HEAD
-node scripts/open-codiff.mjs pr 75
-node scripts/open-codiff.mjs /path/to/repository
-```
+2. **Pick the change.** Default to the **staged** diff (`git diff --staged`). If the user named
+   a target (a commit, `HEAD`, a PR, a path), use that. If nothing is staged, fall back to the
+   working tree (`git diff`) and say so.
 
-The launcher uses `CLAUDE_SESSION_ID` when available and passes it to Codiff with
-`--agent claude`. Codiff owns repository state, diff digest creation, and the ephemeral
-Claude Code walkthrough call.
+3. **Author the JSON** per the guide and write it to a **temporary file outside the
+   repository** (so it never clutters the working tree). Pick a unique absolute path in the
+   system temp directory — e.g. `/tmp/codiff-walkthrough-<id>.json` (use `$TMPDIR` on macOS).
+   Remember that path for the next step.
 
-Do not summarize the conversation manually. The skill is only a handoff into Codiff.
+4. **Open Codiff** with that file:
+
+   ```bash
+   node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json
+   ```
+
+   Forward an explicit target after the flag if the user gave one:
+
+   ```bash
+   node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json HEAD
+   node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json /path/to/repository
+   ```
+
+   The launcher passes `CLAUDE_SESSION_ID` to Codiff with `--agent claude` so follow-up
+   questions reuse this conversation. Codiff validates and repairs the document against the
+   live diff, so anchors that drift are pinned to a real section rather than dropped.
+
+Emit JSON only into the file. Do not summarize the conversation back to the user; the skill
+is a handoff into Codiff.

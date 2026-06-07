@@ -10,6 +10,7 @@
     "showOutdated": false,
     "showWhitespace": false,
     "theme": "system",
+    "walkthroughOrder": "keys",
     "wordWrap": false
   },
   "keymap": {

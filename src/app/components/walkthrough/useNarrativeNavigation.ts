@@ -26,42 +26,45 @@ const collectCommitPaths = (walkthrough: NarrativeWalkthrough | null): ReadonlyA
  * Shared navigation state for the narrative walkthrough, owned by App and passed
  * to both the sidebar table-of-contents and the main hybrid view so a click in
  * either moves both. State: the active order, the focused stop index, whether
- * we're on a stop or in "the rest" (and which rest file), and which segments
- * have been visited (ticked), keyed by segment id so progress survives an order
- * switch.
+ * we're on a stop, supporting files, or commit, and which segments have been
+ * visited (ticked), keyed by segment id so progress survives an order switch.
  */
-export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null) => {
+export const useNarrativeNavigation = (
+  walkthrough: NarrativeWalkthrough | null,
+  preferredOrderId = 'keys',
+) => {
   const [orderId, setOrderId] = useState<string>(() =>
-    walkthrough ? (resolveOrder(walkthrough)?.id ?? walkthrough.defaultOrder) : '',
+    walkthrough
+      ? (resolveOrder(walkthrough, preferredOrderId)?.id ?? walkthrough.defaultOrder)
+      : '',
   );
   const [mode, setMode] = useState<NarrativeViewMode>('stop');
   const [index, setIndex] = useState(0);
   // A nonce-tagged scroll request. The continuous sequence view watches this and
-  // smooth-scrolls to `index` whenever `nonce` bumps — i.e. for command-driven
-  // moves (Next/Prev, the arc, j/k), but NOT for the scroll-driven index updates
-  // the view feeds back in, which would otherwise fight the user's scrolling.
+  // jumps to `index` whenever `nonce` bumps — i.e. for command-driven moves
+  // (Next/Prev, the arc, j/k), but NOT for the scroll-driven index updates the
+  // view feeds back in, which would otherwise fight the user's scrolling.
   const [scrollTarget, setScrollTarget] = useState<{ index: number; nonce: number }>({
     index: 0,
     nonce: 0,
   });
-  const [restFileId, setRestFileId] = useState<string | null>(null);
+  const [restVisited, setRestVisited] = useState(false);
   const [visited, setVisited] = useState<ReadonlySet<string>>(() => {
     const firstSegment = walkthrough
-      ? resolveOrder(walkthrough)?.sequence[0]?.segmentId
+      ? resolveOrder(walkthrough, preferredOrderId)?.sequence[0]?.segmentId
       : undefined;
     return new Set(firstSegment ? [firstSegment] : []);
   });
 
-  // Commit composer state, only meaningful when `walkthrough.commit` is present.
-  // All changed files start selected; the subject seeds from the document.
+  // Commit composer state, only meaningful for working-tree walkthroughs. All
+  // changed files start selected; the title/body may seed from the document.
   const [commitSelected, setCommitSelected] = useState<ReadonlySet<string>>(
     () => new Set(collectCommitPaths(walkthrough)),
   );
   const [commitSubject, setCommitSubject] = useState<string>(
-    () => walkthrough?.commit?.subjectSeed ?? '',
+    () => walkthrough?.commit?.title ?? '',
   );
   const [commitBody, setCommitBody] = useState<string>(() => walkthrough?.commit?.body ?? '');
-  const [commitAuto, setCommitAuto] = useState(false);
 
   // The useState initializers above run once, on the first render — which happens
   // before the walkthrough has loaded (App passes `null`, then sets it). Re-seed the
@@ -74,19 +77,18 @@ export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null)
       return;
     }
     seededFor.current = walkthrough;
-    const order = resolveOrder(walkthrough);
+    const order = resolveOrder(walkthrough, preferredOrderId);
     setOrderId(order?.id ?? walkthrough.defaultOrder);
     setMode('stop');
     setIndex(0);
     setScrollTarget({ index: 0, nonce: 0 });
-    setRestFileId(null);
+    setRestVisited(false);
     const firstSegment = order?.sequence[0]?.segmentId;
     setVisited(new Set(firstSegment ? [firstSegment] : []));
     setCommitSelected(new Set(collectCommitPaths(walkthrough)));
-    setCommitSubject(walkthrough.commit?.subjectSeed ?? '');
+    setCommitSubject(walkthrough.commit?.title ?? '');
     setCommitBody(walkthrough.commit?.body ?? '');
-    setCommitAuto(false);
-  }, [walkthrough]);
+  }, [preferredOrderId, walkthrough]);
 
   const orderView = useMemo(
     () => (walkthrough ? buildOrderView(walkthrough, orderId) : null),
@@ -115,7 +117,6 @@ export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null)
       const clamped = Math.max(0, Math.min(orderView.sequence.length - 1, target));
       setMode('stop');
       setIndex(clamped);
-      setRestFileId(null);
       markVisited(orderView.sequence[clamped]?.segmentId);
       // Ask the sequence view to scroll this stop into view.
       setScrollTarget((current) => ({ index: clamped, nonce: current.nonce + 1 }));
@@ -142,13 +143,15 @@ export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null)
   );
 
   const openRest = useCallback(() => {
+    if (orderView?.sequence.length) {
+      setIndex(orderView.sequence.length - 1);
+    }
     setMode('rest');
-    setRestFileId(null);
-  }, []);
+    setRestVisited(true);
+  }, [orderView]);
 
   const enterCommit = useCallback(() => {
     setMode('commit');
-    setRestFileId(null);
   }, []);
 
   const toggleCommitFile = useCallback((path: string) => {
@@ -178,30 +181,40 @@ export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null)
     });
   }, []);
 
-  const openRestFile = useCallback((segmentId: string) => {
-    setMode('rest');
-    setRestFileId(segmentId);
-  }, []);
-
   const switchOrder = useCallback(
     (nextOrderId: string) => {
-      if (nextOrderId === orderId) {
+      const nextOrder = walkthrough ? resolveOrder(walkthrough, nextOrderId) : null;
+      const resolvedOrderId = nextOrder?.id ?? nextOrderId;
+      if (resolvedOrderId === orderId) {
         return;
       }
-      setOrderId(nextOrderId);
+      setOrderId(resolvedOrderId);
       setMode('stop');
       setIndex(0);
       setScrollTarget((current) => ({ index: 0, nonce: current.nonce + 1 }));
-      setRestFileId(null);
+      setRestVisited(false);
       markVisited(
-        walkthrough ? buildOrderView(walkthrough, nextOrderId)?.sequence[0]?.segmentId : undefined,
+        walkthrough
+          ? buildOrderView(walkthrough, resolvedOrderId)?.sequence[0]?.segmentId
+          : undefined,
       );
     },
     [orderId, walkthrough, markVisited],
   );
 
+  useEffect(() => {
+    if (!walkthrough) {
+      return;
+    }
+    const resolvedOrderId = resolveOrder(walkthrough, preferredOrderId)?.id ?? preferredOrderId;
+    if (resolvedOrderId === orderId) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => switchOrder(resolvedOrderId));
+    return () => cancelAnimationFrame(frame);
+  }, [orderId, preferredOrderId, switchOrder, walkthrough]);
+
   return {
-    commitAuto,
     commitBody,
     commitSelected,
     commitSubject,
@@ -212,12 +225,10 @@ export const useNarrativeNavigation = (walkthrough: NarrativeWalkthrough | null)
     index,
     mode,
     openRest,
-    openRestFile,
     orderId,
     orderView,
-    restFileId,
+    restVisited,
     scrollTarget,
-    setCommitAuto,
     setCommitBody,
     setCommitSubject,
     switchOrder,

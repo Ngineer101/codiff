@@ -1,17 +1,29 @@
 // @ts-check
 
-// Validation + normalization for the Narrative Walkthrough (version 2) document.
-// A narrative walkthrough is authored outside Codiff (by the /walkthrough skill)
-// and handed in as a file. This module is the trust boundary: it validates the
-// structure and *repairs* it against the live diff so the renderer always gets a
-// document whose every reference resolves — unknown segments are dropped, stale
-// paths are removed, and each anchor is pinned to a real DiffSection.
+// Validation, generation, and normalization for the Narrative Walkthrough
+// (version 2) document. This module is the trust boundary: it validates and
+// repairs agent-authored documents against the live diff so the renderer always
+// gets a walkthrough whose references resolve.
 
-const { cleanText, normalizeEnum, oneLine } = require('./agent-shared.cjs');
+const { readFileSync } = require('node:fs');
+const { dirname, join } = require('node:path');
+const {
+  cleanText,
+  normalizeEnum,
+  oneLine,
+  parseJSONMessage,
+  truncate,
+} = require('./agent-shared.cjs');
 
 /**
  * @typedef {import('../src/types.ts').ChangedFile} ChangedFile
+ * @typedef {import('../src/types.ts').DiffSection} DiffSection
  * @typedef {import('../src/types.ts').NarrativeWalkthrough} NarrativeWalkthrough
+ * @typedef {import('../src/types.ts').NarrativeWalkthroughResult} NarrativeWalkthroughResult
+ * @typedef {import('../src/types.ts').RepositoryState} RepositoryState
+ * @typedef {import('../src/types.ts').WalkthroughContext} WalkthroughContext
+ * @typedef {import('./agent.cjs').Agent} Agent
+ * @typedef {import('./agent.cjs').AgentOptions} AgentOptions
  */
 
 const GRANULARITIES = new Set(['line', 'hunk', 'file']);
@@ -34,7 +46,12 @@ const CHANGE_TYPES = new Set([
   'docs',
 ]);
 
+const root = dirname(__dirname);
 const MAX_PROSE_CHARS = 4_000;
+const MAX_TOTAL_PATCH_CHARS = 160_000;
+const MAX_SECTION_PATCH_CHARS = 4_000;
+const MAX_WALKTHROUGH_PHASES = 6;
+const MAX_WALKTHROUGH_STOPS = 14;
 
 // The narrative walkthrough JSON schema, kept in sync with src/walkthrough/
 // narrative-walkthrough.schema.json. Authoring agents constrain output to it; the
@@ -47,7 +64,7 @@ const narrativeWalkthroughSchema = {
       additionalProperties: false,
       properties: {
         body: { type: 'string' },
-        subjectSeed: { type: 'string' },
+        title: { type: 'string' },
       },
       type: 'object',
     },
@@ -71,11 +88,12 @@ const narrativeWalkthroughSchema = {
                 icon: { enum: [...ICONS], type: 'string' },
                 id: { type: 'string' },
                 n: { type: 'number' },
-                title: { type: 'string' },
+                title: { maxLength: 16, type: 'string' },
               },
               required: ['id', 'title', 'icon', 'blurb'],
               type: 'object',
             },
+            maxItems: MAX_WALKTHROUGH_PHASES,
             type: 'array',
           },
           rest: {
@@ -100,12 +118,18 @@ const narrativeWalkthroughSchema = {
                 importance: { enum: [...IMPORTANCES], type: 'string' },
                 phaseId: { type: 'string' },
                 prose: { type: 'string' },
+                relatedSegmentIds: {
+                  items: { type: 'string' },
+                  maxItems: 8,
+                  type: 'array',
+                },
                 segmentId: { type: 'string' },
                 title: { type: 'string' },
               },
               required: ['segmentId', 'phaseId', 'importance', 'prose'],
               type: 'object',
             },
+            maxItems: MAX_WALKTHROUGH_STOPS,
             type: 'array',
           },
           tagline: { type: 'string' },
@@ -203,6 +227,76 @@ const narrativeWalkthroughSchema = {
   type: 'object',
 };
 
+const toArray = (value) => (Array.isArray(value) ? value : value == null ? [] : [value]);
+
+/**
+ * OpenAI structured outputs require every object key to be listed in `required`.
+ * Keep Codiff's public schema ergonomic, and derive the stricter response-format
+ * schema only for agent calls. Originally optional properties become nullable.
+ * @param {any} schema
+ * @param {boolean} [optional]
+ */
+const strictResponseSchema = (schema, optional = false) => {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return schema;
+  }
+
+  const next = { ...schema };
+  const typeValues = toArray(next.type);
+  const isObject = typeValues.includes('object') || next.properties;
+
+  if (next.properties && typeof next.properties === 'object') {
+    const originalRequired = new Set(Array.isArray(next.required) ? next.required : []);
+    const properties = {};
+    for (const [key, value] of Object.entries(next.properties)) {
+      properties[key] = strictResponseSchema(value, !originalRequired.has(key));
+    }
+    next.properties = properties;
+  }
+
+  if (next.items) {
+    next.items = strictResponseSchema(next.items, false);
+  }
+
+  if (isObject) {
+    next.additionalProperties = false;
+    next.required = Object.keys(next.properties || {});
+  }
+
+  if (optional) {
+    if (next.type) {
+      next.type = [...new Set([...toArray(next.type), 'null'])];
+    } else if (next.const !== undefined) {
+      next.anyOf = [{ const: next.const }, { type: 'null' }];
+      delete next.const;
+    }
+  }
+
+  return next;
+};
+
+/**
+ * @param {any} schema
+ * @param {ReadonlyArray<string>} keys
+ */
+const omitSchemaProperties = (schema, keys) => {
+  const next = {
+    ...schema,
+    properties: { ...schema.properties },
+  };
+  for (const key of keys) {
+    delete next.properties[key];
+  }
+  next.required = (Array.isArray(schema.required) ? schema.required : []).filter(
+    (key) => !keys.includes(key),
+  );
+  return next;
+};
+
+const narrativeWalkthroughResponseSchema = strictResponseSchema(
+  omitSchemaProperties(narrativeWalkthroughSchema, ['context', 'source']),
+);
+
 /** @param {unknown} value @param {string} [fallback] */
 const cleanRich = (value, fallback = '') => {
   const text = typeof value === 'string' ? value : fallback;
@@ -212,6 +306,29 @@ const cleanRich = (value, fallback = '') => {
   }
 
   return `${trimmed.slice(0, MAX_PROSE_CHARS)}…`;
+};
+
+/** @param {string} line */
+const isCommitTitleLine = (line) => {
+  const title = line.trim();
+  return title.length > 0 && title.length <= 72 && !/[.!?]$/.test(title);
+};
+
+/** @param {string} body @param {string} title */
+const stripLeadingCommitTitle = (body, title) => {
+  if (!body || !title) {
+    return body;
+  }
+  const lines = body.split(/\r?\n/);
+  const titleIndex = lines.findIndex((line) => line.trim());
+  if (titleIndex === -1 || lines[titleIndex].trim() !== title.trim()) {
+    return body;
+  }
+  let nextIndex = titleIndex + 1;
+  while (nextIndex < lines.length && !lines[nextIndex].trim()) {
+    nextIndex += 1;
+  }
+  return [...lines.slice(0, titleIndex), ...lines.slice(nextIndex)].join('\n').trim();
 };
 
 /** @param {unknown} value */
@@ -426,6 +543,18 @@ const normalizeOrder = (order, segmentIds) => {
     }
 
     placedSegments.add(segmentId);
+    const relatedSegmentIds = [];
+    for (const relatedSegmentId of Array.isArray(stop?.relatedSegmentIds)
+      ? stop.relatedSegmentIds
+      : []) {
+      const id = oneLine(relatedSegmentId);
+      if (!segmentIds.has(id) || id === segmentId || placedSegments.has(id)) {
+        continue;
+      }
+      relatedSegmentIds.push(id);
+      placedSegments.add(id);
+    }
+
     /** @type {Record<string, unknown>} */
     const normalized = {
       importance: normalizeEnum(stop?.importance, IMPORTANCES, 'normal'),
@@ -433,6 +562,9 @@ const normalizeOrder = (order, segmentIds) => {
       prose: cleanRich(stop?.prose),
       segmentId,
     };
+    if (relatedSegmentIds.length > 0) {
+      normalized.relatedSegmentIds = relatedSegmentIds;
+    }
     const title = cleanText(stop?.title);
     if (title) {
       normalized.title = title;
@@ -448,7 +580,11 @@ const normalizeOrder = (order, segmentIds) => {
   const restSegments = new Set();
   for (const item of Array.isArray(order?.rest) ? order.rest : []) {
     const segmentId = oneLine(item?.segmentId);
-    if (!segmentIds.has(segmentId) || restSegments.has(segmentId)) {
+    if (
+      !segmentIds.has(segmentId) ||
+      placedSegments.has(segmentId) ||
+      restSegments.has(segmentId)
+    ) {
       continue;
     }
 
@@ -477,7 +613,7 @@ const normalizeOrder = (order, segmentIds) => {
     phases: usedPhases,
     rest,
     restBlurb: cleanText(order?.restBlurb, 'Changed alongside the work but off the path.'),
-    restLabel: cleanText(order?.restLabel, 'Not in the arc'),
+    restLabel: cleanText(order?.restLabel, 'Support'),
     sequence,
     tagline: cleanText(order?.tagline),
   };
@@ -552,19 +688,28 @@ const normalizeNarrativeWalkthrough = (input, files) => {
   }
 
   // A commit composer only makes sense for a live staging set — never a past
-  // commit, branch, or pull request — so honor `commit` only for a working tree.
-  if (
-    input.commit &&
-    typeof input.commit === 'object' &&
-    /** @type {{type?: string}} */ (result.source).type === 'working-tree'
-  ) {
+  // commit, branch, or pull request. For working trees, always expose the
+  // composer even when the agent did not draft a message, so the reviewer can
+  // complete the whole workflow in Codiff.
+  if (/** @type {{type?: string}} */ (result.source).type === 'working-tree') {
     /** @type {Record<string, unknown>} */
     const commit = {};
-    const subjectSeed = cleanText(input.commit.subjectSeed);
-    if (subjectSeed) {
-      commit.subjectSeed = subjectSeed;
+    const inputCommit = input.commit && typeof input.commit === 'object' ? input.commit : {};
+    const rawBody = cleanRich(inputCommit.body);
+    let title = cleanText(inputCommit.title || inputCommit.subjectSeed);
+    if (!title && rawBody) {
+      const firstLine = rawBody
+        .split(/\r?\n/)
+        .find((line) => line.trim())
+        ?.trim();
+      if (firstLine && isCommitTitleLine(firstLine)) {
+        title = firstLine;
+      }
     }
-    const body = cleanRich(input.commit.body);
+    if (title) {
+      commit.title = title;
+    }
+    const body = stripLeadingCommitTitle(rawBody, title);
     if (body) {
       commit.body = body;
     }
@@ -574,7 +719,155 @@ const normalizeNarrativeWalkthrough = (input, files) => {
   return /** @type {NarrativeWalkthrough} */ (result);
 };
 
+/** @param {DiffSection} section @param {number} remainingBudget */
+const buildPatchExcerpt = (section, remainingBudget) => {
+  const summary = section.summary?.reason ? `Summary: ${section.summary.reason}\n` : '';
+  const patch = section.patch || '';
+  const maxLength = Math.max(
+    0,
+    Math.min(MAX_SECTION_PATCH_CHARS, remainingBudget - summary.length),
+  );
+
+  if (maxLength === 0) {
+    return summary || '[patch omitted: budget exhausted]';
+  }
+
+  return `${summary}${truncate(patch, maxLength)}`;
+};
+
+/** @param {RepositoryState} state */
+const buildPromptInput = (state) => {
+  let remainingPatchBudget = MAX_TOTAL_PATCH_CHARS;
+
+  return {
+    branch: state.branch,
+    files: state.files.map((file) => ({
+      oldPath: file.oldPath,
+      path: file.path,
+      sections: file.sections.map((section) => {
+        const patchExcerpt = buildPatchExcerpt(section, remainingPatchBudget);
+        remainingPatchBudget = Math.max(0, remainingPatchBudget - patchExcerpt.length);
+
+        return {
+          binary: section.binary,
+          id: section.id,
+          kind: section.kind,
+          loadState: section.loadState,
+          patchExcerpt,
+          summary: section.summary?.reason,
+        };
+      }),
+      status: file.status,
+    })),
+    generatedAt: state.generatedAt,
+    root: state.root,
+    source: state.source,
+  };
+};
+
+/** @param {WalkthroughContext | null | undefined} context @param {string} agentLabel */
+const buildWalkthroughContextInput = (context, agentLabel) =>
+  context
+    ? `${agentLabel} conversation context:
+${JSON.stringify(context, null, 2)}
+
+Use this context as orientation for reviewer intent, implementation rationale, validation, and known risks.
+Treat the repository change digest as the source of truth for what changed.
+If the context and digest conflict, trust the digest.
+`
+    : '';
+
+/** @param {RepositoryState} state */
+const buildWalkthroughSizingGuidance = (state) => {
+  const fileCount = state.files.length;
+  const targetStops = fileCount <= 6 ? '3-6' : fileCount <= 16 ? '5-9' : '7-12';
+  return `Walkthrough sizing:
+- Changed files: ${fileCount}.
+- Target ${targetStops} main-path stops and at most ${MAX_WALKTHROUGH_STOPS}.
+- Use 2-${MAX_WALKTHROUGH_PHASES} story phases. A phase is a conceptual chapter, not a file.
+- Phase titles render in a compact top bar: keep each title to 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
+- Do not create one stop per file. A stop can use relatedSegmentIds to include up to 8 files that belong to one review idea.
+- Prefer one conceptual stop with relatedSegmentIds over multiple adjacent stops when files change together.
+- Promote only the files/hunks needed to understand the main review story.
+- Put secondary, mechanical, generated, docs-only, or repeated-pattern files in rest[] as supporting files, grouped by reason.
+- For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
+`;
+};
+
+/** @param {RepositoryState} state @param {WalkthroughContext | null | undefined} [context] @param {string} [agentLabel] */
+const buildNarrativeWalkthroughPrompt = (
+  state,
+  context,
+  agentLabel = 'Codex',
+) => `You are authoring Codiff's narrative walkthrough JSON.
+
+Return JSON only. Do not inspect the repository or run shell commands; use only the guide, optional conversation context, and repository digest below.
+
+${buildWalkthroughSizingGuidance(state)}
+
+Current Codiff walkthrough guide:
+${readFileSync(join(root, 'bin/walkthrough-guide.md'), 'utf8').trim()}
+
+${buildWalkthroughContextInput(context, agentLabel)}
+Repository change digest:
+${JSON.stringify(buildPromptInput(state), null, 2)}
+`;
+
+/**
+ * @param {RepositoryState} state
+ * @param {Agent} agent
+ * @param {AgentOptions} agentOptions
+ * @param {WalkthroughContext | null | undefined} [context]
+ * @returns {Promise<NarrativeWalkthroughResult>}
+ */
+const readNarrativeWalkthrough = async (state, agent, agentOptions, context) => {
+  try {
+    const response = await agent.run(
+      state.root,
+      buildNarrativeWalkthroughPrompt(state, context, agent.label),
+      narrativeWalkthroughResponseSchema,
+      'walkthrough.json',
+      `${agent.label} walkthrough timed out.`,
+      agentOptions,
+    );
+    const parsed = parseJSONMessage(response);
+    const normalizedInput =
+      parsed && typeof parsed === 'object'
+        ? {
+            ...parsed,
+            ...(context ? { context } : {}),
+            source: state.source,
+          }
+        : parsed;
+    const walkthrough = normalizeNarrativeWalkthrough(normalizedInput, state.files);
+    if (context && !walkthrough.context) {
+      walkthrough.context = context;
+    }
+
+    return {
+      status: 'ready',
+      walkthrough,
+    };
+  } catch (error) {
+    if (agent.isNotFoundError(error)) {
+      return {
+        code: agent.notFoundCode,
+        reason: error instanceof Error ? error.message : String(error),
+        status: 'unavailable',
+      };
+    }
+
+    return {
+      reason: error instanceof Error ? error.message : String(error),
+      status: 'unavailable',
+    };
+  }
+};
+
 module.exports = {
+  buildNarrativeWalkthroughPrompt,
+  narrativeWalkthroughResponseSchema,
   narrativeWalkthroughSchema,
   normalizeNarrativeWalkthrough,
+  readNarrativeWalkthrough,
 };

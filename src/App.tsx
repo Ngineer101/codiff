@@ -41,6 +41,7 @@ import {
   type ReviewScrollTarget,
   type SidebarMode,
   type SourceSession,
+  type WalkthroughNote,
   type WalkthroughError,
 } from './lib/app-types.ts';
 import { DEFAULT_PADDING } from './lib/code-view-options.ts';
@@ -78,11 +79,6 @@ import {
 } from './lib/sidebar-width.ts';
 import { getRepositoryLoadError, getShortRef, getSourceKey, getSourceLabel } from './lib/source.ts';
 import { readViewed, writeViewed } from './lib/viewed.ts';
-import {
-  emptyWalkthroughNotes,
-  getWalkthroughNotes,
-  orderFilesByWalkthrough,
-} from './lib/walkthrough.ts';
 import type {
   ChangedFile,
   AgentSkillStatus,
@@ -96,11 +92,12 @@ import type {
   ReviewSource,
   TerminalHelperStatus,
   NarrativeWalkthrough,
-  Walkthrough,
   WalkthroughCommitMessageRequest,
   WalkthroughCommitRequest,
   DiffSection,
 } from './types.ts';
+
+const emptyWalkthroughNotes = new Map<string, WalkthroughNote>();
 
 const getFailedSectionLoadState = (section: DiffSection): DiffSection =>
   isPatchOnlyDiffSection(section)
@@ -122,6 +119,16 @@ const getFailedSectionLoadState = (section: DiffSection): DiffSection =>
 
 const getPreferencesFromConfig = ({ settings }: CodiffConfig): CodiffPreferences => ({
   ...settings,
+});
+
+const createInlineWalkthroughNote = (reason: string): WalkthroughNote => ({
+  action: 'review',
+  context: reason,
+  groupReason: 'Walkthrough',
+  groupTitle: 'Walkthrough',
+  impact: 'contained',
+  order: 0,
+  reason,
 });
 
 const defaultPreferences = getPreferencesFromConfig(createDefaultConfig());
@@ -168,7 +175,6 @@ export default function App() {
     defaultTerminalHelperStatus,
   );
   const [viewed, setViewed] = useState<Record<string, string>>({});
-  const [walkthrough, setWalkthrough] = useState<Walkthrough | null>(null);
   const [narrativeWalkthrough, setNarrativeWalkthrough] = useState<NarrativeWalkthrough | null>(
     null,
   );
@@ -188,9 +194,11 @@ export default function App() {
   const sidebarModeRef = useRef<SidebarMode>('tree');
   const sourceRequestRef = useRef(0);
   const viewedRef = useRef<Record<string, string>>({});
-  const walkthroughRef = useRef<Walkthrough | null>(null);
   const narrativeWalkthroughRef = useRef<NarrativeWalkthrough | null>(null);
-  const narrativeNavigation = useNarrativeNavigation(narrativeWalkthrough);
+  const narrativeNavigation = useNarrativeNavigation(
+    narrativeWalkthrough,
+    preferences.walkthroughOrder,
+  );
   const walkthroughErrorRef = useRef<WalkthroughError | null>(null);
   const [commandBarVisible, setCommandBarVisible] = useState(false);
   const [commandBarCommands, setCommandBarCommands] = useState<ReadonlyArray<Command>>([]);
@@ -339,7 +347,6 @@ export default function App() {
       reviewComments: reviewCommentsRef.current,
       selectedPath: selectedPathRef.current,
       viewed: viewedRef.current,
-      walkthrough: walkthroughRef.current,
       walkthroughError: walkthroughErrorRef.current,
     });
   }, []);
@@ -393,16 +400,19 @@ export default function App() {
       }
 
       const filesPresent = orderedState.files.length > 0;
-      const shouldLoadNarrative = Boolean(nextLaunchOptions.walkthroughFile) && filesPresent;
+      const shouldLoadNarrative = nextLaunchOptions.walkthrough && filesPresent;
       const shouldStartInHistory =
         (orderedState.source.type === 'working-tree' || orderedState.source.type === 'branch') &&
         orderedState.files.length === 0;
 
-      // A pre-authored narrative walkthrough fully replaces the agent ordering
-      // call: load it first, and when it's present skip the v1 walkthrough (and its
-      // "Generating walkthrough…" state) entirely.
+      setLaunchOptions(nextLaunchOptions);
+      setSidebarMode(
+        shouldLoadNarrative ? 'walkthrough' : shouldStartInHistory ? 'history' : 'tree',
+      );
+      setWalkthroughLoading(shouldLoadNarrative);
+
       const narrativeResult = shouldLoadNarrative
-        ? await window.codiff.getNarrativeWalkthrough(orderedState.source).catch(() => null)
+        ? await window.codiff.getNarrativeWalkthrough(orderedState.source)
         : null;
       if (canceled) {
         return;
@@ -411,47 +421,16 @@ export default function App() {
         narrativeResult?.status === 'ready' ? narrativeResult.walkthrough : null;
       setNarrativeWalkthrough(loadedNarrative);
 
-      const shouldLoadWalkthrough =
-        !loadedNarrative && nextLaunchOptions.walkthrough && filesPresent;
-
-      setLaunchOptions({
-        ...nextLaunchOptions,
-        walkthrough: shouldLoadWalkthrough,
-      });
-      setSidebarMode(
-        loadedNarrative || shouldLoadWalkthrough
-          ? 'walkthrough'
-          : shouldStartInHistory
-            ? 'history'
-            : 'tree',
-      );
-      setWalkthroughLoading(shouldLoadWalkthrough);
-
-      const walkthroughResult = shouldLoadWalkthrough
-        ? await window.codiff.getWalkthrough(orderedState.source)
-        : null;
-
-      if (canceled) {
-        return;
-      }
-
-      const nextWalkthrough =
-        walkthroughResult?.status === 'ready' ? walkthroughResult.walkthrough : null;
-
-      if (walkthroughResult?.status === 'unavailable') {
-        setWalkthroughError(walkthroughResult);
+      if (narrativeResult?.status === 'unavailable') {
+        setWalkthroughError(narrativeResult);
       } else {
         setWalkthroughError(null);
       }
 
-      setWalkthrough(nextWalkthrough);
       setWalkthroughLoading(false);
 
       const nextViewed =
         orderedState.source.type === 'working-tree' ? readViewed(orderedState.root) : {};
-      const initialFiles = nextLaunchOptions.walkthrough
-        ? orderFilesByWalkthrough(orderedState.files, nextWalkthrough)
-        : orderedState.files;
       const reloadSelectedPath = getReloadSelectionPath(reloadSelection, orderedState);
       const nextReloadDeltaPaths = getReloadDeltaPaths(reloadSelection, orderedState);
 
@@ -478,7 +457,7 @@ export default function App() {
       setReloadDeltaPaths(nextReloadDeltaPaths);
       setReviewComments(getReviewCommentsFromState(orderedState));
       setViewed(nextViewed);
-      const nextSelectedPath = reloadSelectedPath ?? initialFiles[0]?.path ?? null;
+      const nextSelectedPath = reloadSelectedPath ?? orderedState.files[0]?.path ?? null;
       setSelectedPath(nextSelectedPath);
       if (reloadSelectedPath) {
         scrollPathIntoReview(reloadSelectedPath, 'instant');
@@ -759,10 +738,6 @@ export default function App() {
   }, [viewed]);
 
   useEffect(() => {
-    walkthroughRef.current = walkthrough;
-  }, [walkthrough]);
-
-  useEffect(() => {
     narrativeWalkthroughRef.current = narrativeWalkthrough;
   }, [narrativeWalkthrough]);
 
@@ -778,16 +753,7 @@ export default function App() {
     () => getVisibleReviewComments(reviewComments, showOutdated),
     [reviewComments, showOutdated],
   );
-  const walkthroughNotes = useMemo(() => getWalkthroughNotes(walkthrough), [walkthrough]);
-  const orderedFiles = useMemo(
-    () =>
-      state
-        ? sidebarMode === 'walkthrough'
-          ? orderFilesByWalkthrough(sortFiles(state.files), walkthrough)
-          : sortFiles(state.files)
-        : [],
-    [sidebarMode, state, walkthrough],
-  );
+  const orderedFiles = useMemo(() => (state ? sortFiles(state.files) : []), [state]);
   const fileFilteredFiles = useMemo(
     () =>
       state
@@ -1147,7 +1113,6 @@ export default function App() {
           setReloadDeltaPaths(new Set());
           setViewed(nextViewed);
           setSelectedPath(nextSelectedPath);
-          setWalkthrough(session?.walkthrough ?? null);
           setNarrativeWalkthrough(session?.narrativeWalkthrough ?? null);
           setWalkthroughError(session?.walkthroughError ?? null);
           setWalkthroughLoading(false);
@@ -1236,12 +1201,11 @@ export default function App() {
 
       setSidebarMode('walkthrough');
       setWalkthroughUnread(false);
-      // A pre-authored narrative walkthrough replaces the agent ordering call.
-      if (narrativeWalkthrough || walkthrough || walkthroughError || walkthroughLoading || !state) {
+      if (narrativeWalkthrough || walkthroughError || walkthroughLoading || !state) {
         return;
       }
       if (state.files.length === 0) {
-        setWalkthrough(null);
+        setNarrativeWalkthrough(null);
         setWalkthroughError(null);
         setWalkthroughLoading(false);
         return;
@@ -1251,14 +1215,14 @@ export default function App() {
       setWalkthroughLoading(true);
       setWalkthroughError(null);
       window.codiff
-        .getWalkthrough(state.source)
+        .getNarrativeWalkthrough(state.source)
         .then((result) => {
           if (getSourceKey(stateRef.current?.source ?? state.source) !== sourceKey) {
             return;
           }
 
           if (result.status === 'ready') {
-            setWalkthrough(result.walkthrough);
+            setNarrativeWalkthrough(result.walkthrough);
             if (sidebarModeRef.current === 'walkthrough') {
               setSidebarMode('walkthrough');
             } else {
@@ -1284,7 +1248,7 @@ export default function App() {
           }
         });
     },
-    [narrativeWalkthrough, state, walkthrough, walkthroughError, walkthroughLoading],
+    [narrativeWalkthrough, state, walkthroughError, walkthroughLoading],
   );
 
   useEffect(() => {
@@ -1690,7 +1654,6 @@ export default function App() {
         return;
       }
 
-      const note = walkthroughNotes.get(comment.filePath);
       const request: ReviewAssistantRequest = {
         comment: {
           body: comment.body,
@@ -1701,16 +1664,6 @@ export default function App() {
           ...getReviewCommentRangeProps(comment),
         },
         source: currentState.source,
-        walkthroughNote: note
-          ? {
-              action: note.action,
-              context: note.context,
-              groupReason: note.groupReason,
-              groupTitle: note.groupTitle,
-              impact: note.impact,
-              reason: note.reason,
-            }
-          : undefined,
       };
 
       updateCodexReply(comment.id, comment.filePath, { status: 'loading' });
@@ -1738,7 +1691,7 @@ export default function App() {
           });
         });
     },
-    [updateCodexReply, walkthroughNotes],
+    [updateCodexReply],
   );
 
   const submitPullRequestComment = useCallback(
@@ -1912,7 +1865,7 @@ export default function App() {
   const isSwitchingSource = pendingSource != null;
   const showAgentUnavailablePanel =
     sidebarMode === 'walkthrough' &&
-    !walkthrough &&
+    !narrativeWalkthrough &&
     !walkthroughLoading &&
     (walkthroughError?.code === 'CODEX_NOT_FOUND' || walkthroughError?.code === 'CLAUDE_NOT_FOUND');
 
@@ -1956,16 +1909,22 @@ export default function App() {
     wordWrap,
   };
   // Render one changed file's live diff for a walkthrough stop / full-context reader.
-  const renderStopDiff = (file: ChangedFile) => (
-    <ReviewCodeView
-      {...commonReviewProps}
-      files={[file]}
-      forceExpandedPaths={new Set([file.path])}
-      scrollTarget={null}
-      selectedPath={file.path}
-      walkthroughNotes={emptyWalkthroughNotes}
-    />
-  );
+  const renderStopDiff = (file: ChangedFile, note?: string) => {
+    const walkthroughNotes = note
+      ? new Map([[file.path, createInlineWalkthroughNote(note)]])
+      : emptyWalkthroughNotes;
+    return (
+      <ReviewCodeView
+        {...commonReviewProps}
+        commitMetadata={null}
+        files={[file]}
+        forceExpandedPaths={diffSearchMatchPathSet}
+        scrollTarget={null}
+        selectedPath={file.path}
+        walkthroughNotes={walkthroughNotes}
+      />
+    );
+  };
 
   return (
     <div
@@ -2099,11 +2058,8 @@ export default function App() {
           searchQuery={sidebarMode === 'history' ? historySearchQuery : fileSearchQuery}
           selectedPath={visibleSelectedPath}
           showWhitespace={showWhitespace}
-          walkthroughAvailable={walkthrough != null}
           walkthroughError={walkthroughError}
           walkthroughLoading={walkthroughLoading}
-          walkthroughNotes={walkthroughNotes}
-          walkthroughSummary={walkthrough?.summary ?? null}
           walkthroughUnread={walkthroughUnread}
         />
       </aside>
@@ -2170,9 +2126,7 @@ export default function App() {
             forceExpandedPaths={diffSearchMatchPathSet}
             scrollTarget={scrollTarget}
             selectedPath={visibleSelectedPath}
-            walkthroughNotes={
-              sidebarMode === 'walkthrough' ? walkthroughNotes : emptyWalkthroughNotes
-            }
+            walkthroughNotes={emptyWalkthroughNotes}
           />
         )}
       </main>

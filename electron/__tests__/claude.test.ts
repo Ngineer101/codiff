@@ -74,12 +74,18 @@ test('runs Claude Code headless as a read-only structured-output call', async ()
   try {
     await writeFile(
       fakeClaudePath,
-      `#!/bin/sh
-for arg in "$@"; do
-  printf '%s\\n' "$arg" >> "${argsPath}"
-done
-cat > /dev/null
-printf '%s' '{"is_error":false,"result":"{\\"version\\":1}","structured_output":{"version":1}}'
+      `#!/usr/bin/env node
+const { appendFileSync } = require('node:fs');
+const argsPath = ${JSON.stringify(argsPath)};
+for (const arg of process.argv.slice(2)) {
+  appendFileSync(argsPath, arg + '\\n');
+}
+process.stdin.resume();
+process.stdin.on('end', () => {
+  process.stdout.write(${JSON.stringify(
+    '{"is_error":false,"result":"{\\"version\\":1}","structured_output":{"version":1}}',
+  )});
+});
 `,
     );
     await chmod(fakeClaudePath, 0o755);
@@ -113,9 +119,13 @@ test('surfaces a helpful message when Claude Code is not logged in', async () =>
   try {
     await writeFile(
       fakeClaudePath,
-      `#!/bin/sh
-cat > /dev/null
-printf '{"is_error":true,"result":"Not logged in · Please run /login"}'
+      `#!/usr/bin/env node
+process.stdin.resume();
+process.stdin.on('end', () => {
+  process.stdout.write(${JSON.stringify(
+    '{"is_error":true,"result":"Not logged in · Please run /login"}',
+  )});
+});
 `,
     );
     await chmod(fakeClaudePath, 0o755);

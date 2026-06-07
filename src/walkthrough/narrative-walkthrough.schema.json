@@ -71,11 +71,11 @@
     "commit": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Marks the diff as a committable staging set. When present (and source is a working tree), Codiff adds a commit composer as the walkthrough's terminal stop.",
+      "description": "Optional seed text for the commit composer. Codiff always adds the composer for working-tree walkthroughs; omit this for commits, branches, and pull requests.",
       "properties": {
-        "subjectSeed": {
+        "title": {
           "type": "string",
-          "description": "Seed for the human-authored subject line (line 1 of the message)."
+          "description": "Suggested first line for the commit message."
         },
         "body": {
           "type": "string",
@@ -212,6 +212,7 @@
           "phases": {
             "type": "array",
             "description": "Named chapters/phases for this order.",
+            "maxItems": 6,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -222,7 +223,11 @@
                   "type": "number",
                   "description": "1-based position; reassigned on normalize."
                 },
-                "title": { "type": "string" },
+                "title": {
+                  "type": "string",
+                  "maxLength": 16,
+                  "description": "Compact top-bar label, ideally 1-2 short words such as 'UI', 'CLI', 'Tests', or 'Cleanup'."
+                },
                 "icon": {
                   "type": "string",
                   "enum": ["bug", "wrench", "path", "flask", "beaker", "doc", "gear"]
@@ -234,6 +239,7 @@
           "sequence": {
             "type": "array",
             "description": "Ordered stops. Each is a segment plus this order's framing of it.",
+            "maxItems": 14,
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -251,6 +257,12 @@
                 "prose": {
                   "type": "string",
                   "description": "Agent narration (markdown / inline code)."
+                },
+                "relatedSegmentIds": {
+                  "type": "array",
+                  "description": "Additional segment ids rendered under this same conceptual stop.",
+                  "maxItems": 8,
+                  "items": { "type": "string" }
                 },
                 "title": {
                   "type": "string",
@@ -281,7 +293,7 @@
     },
     "defaultOrder": {
       "type": "string",
-      "description": "The id of the order to open by default. Falls back to the first order if unknown."
+      "description": "Fallback order id when the user's persisted walkthrough order preference is unavailable. Falls back to the first order if unknown."
     }
   }
 }

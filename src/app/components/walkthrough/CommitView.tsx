@@ -7,24 +7,19 @@ import {
   type WalkthroughOrderView,
 } from '../../../lib/narrative-walkthrough.ts';
 import type {
-  NarrativeWalkthrough,
   WalkthroughCommitMessageRequest,
   WalkthroughCommitMessageResult,
   WalkthroughCommitRequest,
   WalkthroughCommitResult,
 } from '../../../types.ts';
 import { ArrowsClockwise, Check, GitBranch } from './icons.tsx';
-import { AgentLogo, PhaseIcon, WalkthroughLineCount } from './parts.tsx';
+import { PhaseIcon, WalkthroughLineCount } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
 export type CommitHandler = (request: WalkthroughCommitRequest) => Promise<WalkthroughCommitResult>;
 export type CommitMessageHandler = (
   request: WalkthroughCommitMessageRequest,
 ) => Promise<WalkthroughCommitMessageResult>;
-
-const agentName = (agentId: 'codex' | 'claude') => (agentId === 'claude' ? 'Claude' : 'Codex');
-const agentFullName = (agentId: 'codex' | 'claude') =>
-  agentId === 'claude' ? 'Claude Code' : 'Codex';
 
 type CheckState = 'on' | 'off' | 'partial';
 
@@ -129,50 +124,20 @@ function StageGroupRow({
   );
 }
 
-function SubjectInput({
-  agentId,
-  auto,
-  onChange,
-  onToggleAuto,
-  seed,
-  value,
-}: {
-  agentId: 'codex' | 'claude';
-  auto: boolean;
-  onChange: (value: string) => void;
-  onToggleAuto: () => void;
-  seed: string;
-  value: string;
-}) {
-  const shown = auto ? seed : value;
-  const length = shown.length;
+function SubjectInput({ onChange, value }: { onChange: (value: string) => void; value: string }) {
+  const length = value.length;
   return (
     <div className="wt-commit-subject">
-      <span className="wt-commit-eyebrow">Summary</span>
       <div className="wt-commit-subject-wrap">
         <input
-          className={`wt-commit-subject-field${auto ? ' auto' : ''}`}
+          className="wt-commit-subject-field"
           onChange={(event) => onChange(event.target.value)}
           placeholder="Summarize the change in one line…"
-          readOnly={auto}
           spellCheck={false}
-          value={shown}
+          value={value}
         />
-        {auto ? (
-          <span className="wt-commit-subject-auto-mark">
-            <AgentLogo agentId={agentId} />
-          </span>
-        ) : null}
       </div>
       <div className="wt-commit-subject-foot">
-        <button
-          className={`wt-commit-writefor${auto ? ' on' : ''}`}
-          onClick={onToggleAuto}
-          type="button"
-        >
-          <CommitCheck state={auto ? 'on' : 'off'} />
-          <span>Let {agentName(agentId)} write the summary for me</span>
-        </button>
         <span className={`wt-commit-count${length > 50 ? ' warn' : ''}`}>{length}/50</span>
       </div>
     </div>
@@ -180,12 +145,11 @@ function SubjectInput({
 }
 
 /**
- * The agent-drafted commit body, editable. When the file selection is narrowed
- * below the full set, an "Update the message" action asks the agent to rewrite
- * the prose for exactly the selected files.
+ * Editable commit body. When the file selection is narrowed below the full set,
+ * an "Update the message" action asks the agent to rewrite the prose for exactly
+ * the selected files.
  */
 function MessageDraft({
-  agentId,
   canUpdate,
   flash,
   onChange,
@@ -194,7 +158,6 @@ function MessageDraft({
   updating,
   value,
 }: {
-  agentId: 'codex' | 'claude';
   canUpdate: boolean;
   flash: boolean;
   onChange: (value: string) => void;
@@ -204,41 +167,35 @@ function MessageDraft({
   value: string;
 }) {
   return (
-    <div className="wt-commit-msg">
-      <div className="wt-commit-msg-head">
-        <span className="wt-commit-msg-avatar">
-          <AgentLogo agentId={agentId} />
-        </span>
-        <span className="wt-commit-msg-by">
-          <strong>{agentFullName(agentId)}</strong>
-          <span>
-            {canUpdate ? 'Selection changed — message may be stale' : 'Drafted body · editable'}
-          </span>
-        </span>
+    <div className="wt-commit-msg-section">
+      <span className="wt-commit-body-label">Summary</span>
+      <div className="wt-commit-msg">
         {canUpdate ? (
-          <span className="wt-commit-msg-actions">
-            <button
-              className="wt-commit-update"
-              disabled={updating}
-              onClick={onUpdate}
-              type="button"
-            >
-              <ArrowsClockwise size={14} />
-              {updating ? 'Updating…' : 'Update the message'}
-            </button>
-          </span>
+          <div className="wt-commit-msg-head">
+            <span className="wt-commit-msg-actions">
+              <button
+                className="wt-commit-update"
+                disabled={updating}
+                onClick={onUpdate}
+                type="button"
+              >
+                <ArrowsClockwise size={14} />
+                {updating ? 'Updating…' : 'Update the message'}
+              </button>
+            </span>
+          </div>
         ) : null}
+        <div className={`wt-commit-msg-body${flash ? ' flash' : ''}`}>
+          <textarea
+            className="wt-commit-msg-input"
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Describe the change in a paragraph or two…"
+            spellCheck={false}
+            value={value}
+          />
+        </div>
+        {updateError ? <div className="wt-commit-msg-foot error">{updateError}</div> : null}
       </div>
-      <div className={`wt-commit-msg-body${flash ? ' flash' : ''}`}>
-        <textarea
-          className="wt-commit-msg-input"
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Describe the change in a paragraph or two…"
-          spellCheck={false}
-          value={value}
-        />
-      </div>
-      {updateError ? <div className="wt-commit-msg-foot error">{updateError}</div> : null}
     </div>
   );
 }
@@ -248,13 +205,11 @@ export function CommitView({
   navigation,
   onCommit,
   onUpdateMessage,
-  walkthrough,
 }: {
   branch: string | null;
   navigation: NarrativeNavigation;
   onCommit: CommitHandler;
   onUpdateMessage: CommitMessageHandler;
-  walkthrough: NarrativeWalkthrough;
 }) {
   const orderView = navigation.orderView as WalkthroughOrderView;
   const model = buildCommitModel(orderView);
@@ -264,8 +219,7 @@ export function CommitView({
     (sum, file) => ({ added: sum.added + file.added, deleted: sum.deleted + file.deleted }),
     { added: 0, deleted: 0 },
   );
-  const seed = walkthrough.commit?.subjectSeed ?? '';
-  const subject = navigation.commitAuto ? seed : navigation.commitSubject;
+  const subject = navigation.commitSubject;
   const allSelected = selectedFiles.length === model.files.length;
 
   const [status, setStatus] = useState<'idle' | 'submitting'>('idle');
@@ -298,7 +252,6 @@ export function CommitView({
     if (next.status === 'ready') {
       navigation.setCommitBody(next.body);
       if (next.subject) {
-        navigation.setCommitAuto(false);
         navigation.setCommitSubject(next.subject);
       }
       setBodyFlash(true);
@@ -326,14 +279,17 @@ export function CommitView({
   return (
     <div className="wt-commit">
       <div className="wt-commit-bar">
-        <span className="wt-commit-bar-title">
-          <GitBranch size={16} /> Commit
-        </span>
+        <span className="wt-commit-bar-title">Commit</span>
         {branch ? (
           <span className="wt-commit-bar-branch">
             <GitBranch size={13} /> {branch}
           </span>
         ) : null}
+        <span className="wt-commit-bar-meta">
+          {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'} ·{' '}
+          <span className="added">+{totals.added}</span>{' '}
+          <span className="deleted">−{totals.deleted}</span>
+        </span>
       </div>
       <div className="wt-commit-scroll">
         <div className="wt-commit-stage">
@@ -356,16 +312,8 @@ export function CommitView({
           {result?.status === 'failed' ? (
             <div className="wt-commit-error">{result.reason}</div>
           ) : null}
-          <SubjectInput
-            agentId={walkthrough.agent}
-            auto={navigation.commitAuto}
-            onChange={navigation.setCommitSubject}
-            onToggleAuto={() => navigation.setCommitAuto(!navigation.commitAuto)}
-            seed={seed}
-            value={navigation.commitSubject}
-          />
+          <SubjectInput onChange={navigation.setCommitSubject} value={navigation.commitSubject} />
           <MessageDraft
-            agentId={walkthrough.agent}
             canUpdate={canUpdate}
             flash={bodyFlash}
             onChange={navigation.setCommitBody}
@@ -394,20 +342,6 @@ export function CommitView({
         </div>
       </div>
       <div className="wt-commit-foot">
-        <span className="wt-commit-foot-summary">
-          Committing{' '}
-          <strong>
-            {selectedFiles.length} file{selectedFiles.length === 1 ? '' : 's'}
-          </strong>{' '}
-          · <span className="added">+{totals.added}</span>{' '}
-          <span className="deleted">−{totals.deleted}</span>
-          {branch ? (
-            <>
-              {' '}
-              onto <strong>{branch}</strong>
-            </>
-          ) : null}
-        </span>
         <span className="wt-commit-foot-actions">
           <button className="wt-commit-btn" disabled={!canCommit} onClick={submit} type="button">
             <GitBranch size={16} />

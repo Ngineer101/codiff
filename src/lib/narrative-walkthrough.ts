@@ -20,6 +20,7 @@ export type NarrativeLineCount = {
 /** A stop resolved to its segment and given a global position in the order. */
 export type WalkthroughStopView = WalkthroughStop & {
   index: number;
+  relatedSegments: ReadonlyArray<WalkthroughSegment>;
   segment: WalkthroughSegment;
 };
 
@@ -50,6 +51,20 @@ export type WalkthroughOrderView = {
   totals: NarrativeLineCount;
 };
 
+export const getStopSegments = (stop: WalkthroughStopView): ReadonlyArray<WalkthroughSegment> => [
+  stop.segment,
+  ...stop.relatedSegments,
+];
+
+const sumSegments = (segments: ReadonlyArray<WalkthroughSegment>): NarrativeLineCount =>
+  segments.reduce(
+    (totals, segment) => ({
+      added: totals.added + segment.added,
+      deleted: totals.deleted + segment.deleted,
+    }),
+    { added: 0, deleted: 0 },
+  );
+
 const sumLineCount = (items: ReadonlyArray<{ segment: WalkthroughSegment }>): NarrativeLineCount =>
   items.reduce(
     (totals, { segment }) => ({
@@ -58,6 +73,15 @@ const sumLineCount = (items: ReadonlyArray<{ segment: WalkthroughSegment }>): Na
     }),
     { added: 0, deleted: 0 },
   );
+
+const sumStopLineCount = (stops: ReadonlyArray<WalkthroughStopView>): NarrativeLineCount =>
+  sumSegments(stops.flatMap((stop) => getStopSegments(stop)));
+
+export const getStopLineCount = (stop: WalkthroughStopView): NarrativeLineCount =>
+  sumSegments(getStopSegments(stop));
+
+export const isWalkthroughCommittable = (walkthrough: NarrativeWalkthrough): boolean =>
+  walkthrough.source.type === 'working-tree';
 
 const groupRestByReason = (
   rest: ReadonlyArray<WalkthroughRestView>,
@@ -112,7 +136,14 @@ export const buildOrderView = (
   for (const stop of order.sequence) {
     const segment = segmentsById.get(stop.segmentId);
     if (segment) {
-      sequence.push({ ...stop, index: sequence.length, segment });
+      const relatedSegments: Array<WalkthroughSegment> = [];
+      for (const segmentId of stop.relatedSegmentIds ?? []) {
+        const relatedSegment = segmentsById.get(segmentId);
+        if (relatedSegment) {
+          relatedSegments.push(relatedSegment);
+        }
+      }
+      sequence.push({ ...stop, index: sequence.length, relatedSegments, segment });
     }
   }
 
@@ -136,7 +167,7 @@ export const buildOrderView = (
     restByReason: groupRestByReason(rest),
     restTotals: sumLineCount(rest),
     sequence,
-    totals: sumLineCount(sequence),
+    totals: sumStopLineCount(sequence),
   };
 };
 
@@ -238,7 +269,9 @@ export const buildCommitModel = (orderView: WalkthroughOrderView): CommitModel =
     });
   };
   for (const stop of orderView.sequence) {
-    addTotals(stop.segment);
+    for (const segment of getStopSegments(stop)) {
+      addTotals(segment);
+    }
   }
   for (const item of orderView.rest) {
     addTotals(item.segment);
@@ -267,13 +300,15 @@ export const buildCommitModel = (orderView: WalkthroughOrderView): CommitModel =
   for (const phase of orderView.phases) {
     const phaseFiles: Array<CommitFile> = [];
     for (const stop of phase.stops) {
-      if (seen.has(stop.segment.path)) {
-        continue;
+      for (const segment of getStopSegments(stop)) {
+        if (seen.has(segment.path)) {
+          continue;
+        }
+        seen.add(segment.path);
+        const file = toFile(segment);
+        phaseFiles.push(file);
+        files.push(file);
       }
-      seen.add(stop.segment.path);
-      const file = toFile(stop.segment);
-      phaseFiles.push(file);
-      files.push(file);
     }
     if (phaseFiles.length > 0) {
       groups.push({
@@ -318,5 +353,5 @@ export const granularityLabel: Record<WalkthroughSegment['granularity'], string>
 export const importanceLabel: Record<WalkthroughStop['importance'], string> = {
   context: 'Context',
   critical: 'Critical',
-  normal: 'Key change',
+  normal: 'Review',
 };

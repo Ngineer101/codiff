@@ -1,18 +1,24 @@
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import {
   buildCommitModel,
+  getStopLineCount,
+  getStopSegments,
+  isWalkthroughCommittable,
   type WalkthroughOrderView,
   type WalkthroughStopView,
 } from '../../../lib/narrative-walkthrough.ts';
 import type { NarrativeWalkthrough } from '../../../types.ts';
 import { Check, GitBranch, Path } from './icons.tsx';
-import { AgentLogo, GranularityChip, PhaseIcon } from './parts.tsx';
+import { PhaseIcon } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
 const agentLabel = (agentId: 'codex' | 'claude') =>
   agentId === 'claude' ? 'Claude Code' : 'Codex';
 
 const fileName = (path: string) => path.split('/').pop() ?? path;
+
+const countUniqueRestFiles = (orderView: WalkthroughOrderView) =>
+  new Set(orderView.rest.map((item) => item.segment.path)).size;
 
 function TocStop({
   current,
@@ -26,6 +32,9 @@ function TocStop({
   visited: boolean;
 }) {
   const isDone = visited && !current;
+  const segments = getStopSegments(stop);
+  const fileCount = new Set(segments.map((segment) => segment.path)).size;
+  const lineCount = getStopLineCount(stop);
   return (
     <button
       className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' visited' : ''}`}
@@ -52,13 +61,12 @@ function TocStop({
           </span>
         </span>
         <span className="wt-toc-meta">
-          <span className="wt-toc-file">{fileName(stop.segment.path)}</span>
-          <GranularityChip granularity={stop.segment.granularity} />
+          <span className="wt-toc-file">
+            {fileCount > 1 ? `${fileCount} files` : fileName(stop.segment.path)}
+          </span>
           <span className="wt-toc-count">
-            <span className="added">+{stop.segment.added}</span>
-            {stop.segment.deleted > 0 ? (
-              <span className="deleted">−{stop.segment.deleted}</span>
-            ) : null}
+            <span className="added">+{lineCount.added}</span>
+            {lineCount.deleted > 0 ? <span className="deleted">−{lineCount.deleted}</span> : null}
           </span>
         </span>
       </span>
@@ -66,7 +74,7 @@ function TocStop({
   );
 }
 
-function RestGroup({
+function SupportingFilesStop({
   navigation,
   orderView,
 }: {
@@ -76,42 +84,52 @@ function RestGroup({
   if (orderView.rest.length === 0) {
     return null;
   }
+  const current = navigation.mode === 'rest';
+  const isDone = navigation.restVisited && !current;
+  const fileCount = countUniqueRestFiles(orderView);
   return (
-    <div className="wt-support-group">
-      <div className="wt-support-head">
-        <span className="wt-support-head-icon">
-          <Path size={14} />
+    <div className="wt-toc-chapter">
+      <div className="wt-toc-chapter-head">
+        <span className="wt-toc-chapter-icon">
+          <Path size={15} />
         </span>
-        <span className="wt-support-head-title">{orderView.order.restLabel}</span>
-        <span className="wt-support-head-count">{orderView.rest.length} files</span>
+        <span className="wt-toc-chapter-title">{orderView.order.restLabel}</span>
       </div>
-      <p className="wt-support-blurb">{orderView.order.restBlurb}</p>
-      {orderView.restByReason.map((group) => (
-        <div className="wt-support-reason" key={group.reason}>
-          <span className="wt-support-reason-label">{group.reason}</span>
-          {group.files.map((item) => (
-            <button
-              className={`wt-support-file${
-                navigation.mode === 'rest' && navigation.restFileId === item.segmentId
-                  ? ' current'
-                  : ''
-              }`}
-              key={item.segmentId}
-              onClick={() => navigation.openRestFile(item.segmentId)}
-              title={item.note ?? item.segment.path}
-              type="button"
-            >
-              <span className="wt-support-file-name">{fileName(item.segment.path)}</span>
-              <span className="wt-support-file-count">
-                <span className="added">+{item.segment.added}</span>
-                {item.segment.deleted > 0 ? (
-                  <span className="deleted">−{item.segment.deleted}</span>
+      <div className="wt-toc-stops">
+        <button
+          className={`wt-toc-stop${current ? ' current' : ''}${isDone ? ' visited' : ''}`}
+          onClick={navigation.openRest}
+          title={orderView.order.restBlurb}
+          type="button"
+        >
+          <span className="wt-toc-rail">
+            {isDone ? (
+              <span className="wt-toc-node done">
+                <Check size={8} weight="bold" />
+              </span>
+            ) : (
+              <span className={`wt-toc-node${current ? ' current' : ''}`}>
+                {current ? <span className="wt-toc-node-pulse" /> : null}
+              </span>
+            )}
+          </span>
+          <span className="wt-toc-main">
+            <span className="wt-toc-title-row">
+              <span className="wt-toc-title">
+                {fileCount} file{fileCount === 1 ? '' : 's'}
+              </span>
+            </span>
+            <span className="wt-toc-meta">
+              <span className="wt-toc-count">
+                <span className="added">+{orderView.restTotals.added}</span>
+                {orderView.restTotals.deleted > 0 ? (
+                  <span className="deleted">−{orderView.restTotals.deleted}</span>
                 ) : null}
               </span>
-            </button>
-          ))}
-        </div>
-      ))}
+            </span>
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -131,7 +149,7 @@ export function NarrativeSidebar({
   const currentSegmentId =
     navigation.mode === 'stop' ? orderView.sequence[navigation.index]?.segmentId : null;
 
-  const committable = walkthrough.commit != null;
+  const committable = isWalkthroughCommittable(walkthrough);
   const commitModel = committable ? buildCommitModel(orderView) : null;
   const commitTotals = commitModel
     ? commitModel.files
@@ -144,54 +162,34 @@ export function NarrativeSidebar({
 
   return (
     <div className="walkthrough-list">
-      <div className="wt-status">
-        <span className="wt-status-agent">
-          <AgentLogo agentId={walkthrough.agent} />
-        </span>
-        <div className="wt-status-text">
-          <strong>{orderView.order.label}</strong>
-          <span>{orderView.order.tagline}</span>
-        </div>
-      </div>
-
       <div className="wt-focus">
         <span className="wt-focus-label">Review focus</span>
         <p>{renderInlineMarkdown(walkthrough.focus)}</p>
       </div>
 
       <div className="wt-toc-scroll">
-        {orderView.phases.map((phase) => {
-          const done = phase.stops.filter(
-            (stop) => navigation.visited.has(stop.segmentId) && stop.segmentId !== currentSegmentId,
-          ).length;
-          return (
-            <div className="wt-toc-chapter" key={phase.id}>
-              <div className="wt-toc-chapter-head">
-                <span className="wt-toc-chapter-icon">
-                  <PhaseIcon icon={phase.icon} size={15} />
-                </span>
-                <span className="wt-toc-chapter-title">
-                  Ch {phase.n} · {phase.title}
-                </span>
-                <span className="wt-toc-chapter-progress">
-                  {done}/{phase.stops.length}
-                </span>
-              </div>
-              <div className="wt-toc-stops">
-                {phase.stops.map((stop) => (
-                  <TocStop
-                    current={navigation.mode === 'stop' && stop.segmentId === currentSegmentId}
-                    key={stop.segmentId}
-                    onSelect={navigation.goStop}
-                    stop={stop}
-                    visited={navigation.visited.has(stop.segmentId)}
-                  />
-                ))}
-              </div>
+        {orderView.phases.map((phase) => (
+          <div className="wt-toc-chapter" key={phase.id}>
+            <div className="wt-toc-chapter-head">
+              <span className="wt-toc-chapter-icon">
+                <PhaseIcon icon={phase.icon} size={15} />
+              </span>
+              <span className="wt-toc-chapter-title">{phase.title}</span>
             </div>
-          );
-        })}
-        <RestGroup navigation={navigation} orderView={orderView} />
+            <div className="wt-toc-stops">
+              {phase.stops.map((stop) => (
+                <TocStop
+                  current={navigation.mode === 'stop' && stop.segmentId === currentSegmentId}
+                  key={stop.segmentId}
+                  onSelect={navigation.goStop}
+                  stop={stop}
+                  visited={navigation.visited.has(stop.segmentId)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        <SupportingFilesStop navigation={navigation} orderView={orderView} />
         {committable && commitTotals ? (
           <div className="wt-toc-chapter">
             <div className="wt-toc-chapter-head">
@@ -205,7 +203,7 @@ export function NarrativeSidebar({
               onClick={navigation.enterCommit}
               type="button"
             >
-              <span className="wt-toc-rail">
+              <span className="wt-toc-rail wt-toc-rail-commit">
                 <span className={`wt-toc-node${navigation.mode === 'commit' ? ' current' : ''}`}>
                   {navigation.mode === 'commit' ? <span className="wt-toc-node-pulse" /> : null}
                 </span>
@@ -230,16 +228,6 @@ export function NarrativeSidebar({
             </button>
           </div>
         ) : null}
-      </div>
-
-      <div className="sidebar-total-row">
-        <span>
-          {navigation.visited.size} of {orderView.sequence.length} stops seen
-        </span>
-        <span className="codiff-line-count">
-          <span className="codiff-line-count-added">+{orderView.totals.added}</span>
-          <span className="codiff-line-count-deleted">−{orderView.totals.deleted}</span>
-        </span>
       </div>
     </div>
   );

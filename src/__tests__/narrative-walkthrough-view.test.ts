@@ -2,6 +2,7 @@ import { expect, test } from 'vite-plus/test';
 import {
   buildCommitModel,
   buildOrderView,
+  isWalkthroughCommittable,
   resolveOrder,
   resolveSegmentFile,
 } from '../lib/narrative-walkthrough.ts';
@@ -109,6 +110,37 @@ test('buildOrderView indexes stops, fills phases, and resolves segments', () => 
   expect(view.totals).toEqual({ added: 15, deleted: 1 });
 });
 
+test('buildOrderView keeps related files under the same narrative stop', () => {
+  const base = walkthrough();
+  const wt: NarrativeWalkthrough = {
+    ...base,
+    orders: [
+      {
+        ...base.orders[0],
+        rest: base.orders[0].rest.filter((item) => item.segmentId !== 's2'),
+        sequence: [
+          {
+            importance: 'critical',
+            phaseId: 'bug',
+            prose: 'Bug and proof belong together.',
+            relatedSegmentIds: ['s2'],
+            segmentId: 's1',
+          },
+        ],
+      },
+      base.orders[1],
+    ],
+  };
+
+  const view = buildOrderView(wt, 'keys')!;
+
+  expect(view.sequence).toHaveLength(1);
+  expect(view.sequence[0].segmentId).toBe('s1');
+  expect(view.sequence[0].relatedSegments.map((segment) => segment.id)).toEqual(['s2']);
+  expect(view.phases[0].stops.map((stop) => stop.segmentId)).toEqual(['s1']);
+  expect(view.totals).toEqual({ added: 15, deleted: 1 });
+});
+
 test('buildOrderView groups the rest by reason and totals it', () => {
   const view = buildOrderView(walkthrough(), 'keys')!;
 
@@ -148,6 +180,39 @@ test('buildCommitModel collapses the order into phase groups plus the rest', () 
   ]);
 });
 
+test('buildCommitModel includes related files in the stop phase group', () => {
+  const base = walkthrough();
+  const wt: NarrativeWalkthrough = {
+    ...base,
+    orders: [
+      {
+        ...base.orders[0],
+        sequence: [
+          {
+            importance: 'critical',
+            phaseId: 'bug',
+            prose: 'Bug and proof belong together.',
+            relatedSegmentIds: ['s2'],
+            segmentId: 's1',
+          },
+        ],
+      },
+      base.orders[1],
+    ],
+  };
+
+  const model = buildCommitModel(buildOrderView(wt, 'keys')!);
+
+  expect(model.groups[0].title).toBe('The bug');
+  expect(model.groups[0].files.map((file) => file.path)).toEqual(['src/App.tsx', 'src/test.ts']);
+  expect(model.files.map((file) => file.path)).toEqual([
+    'src/App.tsx',
+    'src/test.ts',
+    'pnpm-lock.yaml',
+    'mirror.ts',
+  ]);
+});
+
 test('buildCommitModel carries per-file change-type tags and notes onto the rows', () => {
   const base = walkthrough();
   const tagged: Record<string, Partial<NarrativeWalkthrough['segments'][number]>> = {
@@ -168,6 +233,22 @@ test('buildCommitModel carries per-file change-type tags and notes onto the rows
     note: 'lock the regression',
   });
   expect(byPath.get('pnpm-lock.yaml')?.changeType).toBe('lockfile');
+});
+
+test('working-tree walkthroughs are committable even without commit seed text', () => {
+  const wt: NarrativeWalkthrough = {
+    ...walkthrough(),
+    commit: undefined,
+    source: { type: 'working-tree' },
+  };
+  const committedReview: NarrativeWalkthrough = {
+    ...walkthrough(),
+    commit: {},
+    source: { ref: 'HEAD', type: 'commit' },
+  };
+
+  expect(isWalkthroughCommittable(wt)).toBe(true);
+  expect(isWalkthroughCommittable(committedReview)).toBe(false);
 });
 
 test('resolveSegmentFile prefers the anchor section then the first visible one', () => {

@@ -49,6 +49,7 @@ export default defineConfig({
     '*': 'vp check --fix',
   },
   test: {
+    include: ['electron/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/__tests__/setup.ts'],
   },
   worker: {

@@ -63,10 +63,7 @@ const createCodexAgent = () => ({
   sessionLaunchOptionKey: 'codexSessionId',
   skill: {
     label: 'Codex Skill',
-    targets: [
-      { sourceSubdir: 'codex/skills/codiff', targetSubdir: '.codex/skills/codiff' },
-      { sourceSubdir: 'codex/skills/walkthrough', targetSubdir: '.codex/skills/walkthrough' },
-    ],
+    targets: [{ sourceSubdir: 'codex/skills/codiff', targetSubdir: '.codex/skills/codiff' }],
   },
 });
 
@@ -88,10 +85,7 @@ const createClaudeAgent = () => ({
   sessionLaunchOptionKey: 'claudeSessionId',
   skill: {
     label: 'Claude Code Skill',
-    targets: [
-      { sourceSubdir: 'claude/skills/codiff', targetSubdir: '.claude/skills/codiff' },
-      { sourceSubdir: 'claude/skills/walkthrough', targetSubdir: '.claude/skills/walkthrough' },
-    ],
+    targets: [{ sourceSubdir: 'claude/skills/codiff', targetSubdir: '.claude/skills/codiff' }],
   },
 });
 

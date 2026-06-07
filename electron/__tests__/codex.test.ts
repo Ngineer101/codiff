@@ -148,3 +148,40 @@ exit 1
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+test('surfaces structured Codex CLI errors without the full prompt stream', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-codex-'));
+  const fakeCodexPath = join(directory, 'codex');
+  const previousCodexPath = process.env.CODIFF_CODEX_PATH;
+
+  try {
+    await writeFile(
+      fakeCodexPath,
+      `#!/bin/sh
+cat >/dev/null
+printf '%s\\n' 'user very long prompt that should not be shown'
+printf '%s\\n' 'ERROR: {"type":"error","error":{"message":"Invalid schema for response_format."}}' >&2
+exit 1
+`,
+    );
+    await chmod(fakeCodexPath, 0o755);
+    process.env.CODIFF_CODEX_PATH = fakeCodexPath;
+
+    let message = '';
+    try {
+      await runCodex('/repo', 'prompt', {}, 'walkthrough.json', 'Timed out.');
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain('Invalid schema for response_format.');
+    expect(message).not.toContain('very long prompt');
+  } finally {
+    if (previousCodexPath == null) {
+      delete process.env.CODIFF_CODEX_PATH;
+    } else {
+      process.env.CODIFF_CODEX_PATH = previousCodexPath;
+    }
+    await rm(directory, { force: true, recursive: true });
+  }
+});

@@ -22,7 +22,6 @@ import type {
   WalkthroughCommitMessageResult,
   WalkthroughCommitRequest,
   WalkthroughCommitResult,
-  WalkthroughResult,
 } from './types.ts';
 
 declare global {
@@ -38,14 +37,11 @@ declare global {
       getDiffSectionContent: (request: DiffSectionContentRequest) => Promise<DiffSection>;
       getGitIdentity: () => Promise<GitIdentity>;
       getLaunchOptions: () => Promise<CodiffLaunchOptions>;
-      getNarrativeWalkthrough: (
-        source?: ReviewSource,
-      ) => Promise<NarrativeWalkthroughResult | null>;
+      getNarrativeWalkthrough: (source?: ReviewSource) => Promise<NarrativeWalkthroughResult>;
       getPreferences: () => Promise<CodiffPreferences>;
       getRepositoryHistory: (limit?: number, source?: ReviewSource) => Promise<RepositoryHistory>;
       getRepositoryState: (source?: ReviewSource) => Promise<RepositoryState>;
       getTerminalHelperStatus: () => Promise<TerminalHelperStatus>;
-      getWalkthrough: (source?: ReviewSource) => Promise<WalkthroughResult>;
       installAgentSkill: () => Promise<AgentSkillStatus>;
       installTerminalHelper: () => Promise<TerminalHelperStatus>;
       onConfigChanged: (callback: (config: CodiffConfig) => void) => () => void;
@@ -56,6 +52,7 @@ declare global {
       openFile: (path: string) => Promise<void>;
       setDiffStyle: (value: CodiffPreferences['diffStyle']) => Promise<void>;
       setShowOutdated: (value: boolean) => Promise<void>;
+      setWalkthroughOrder: (value: string) => Promise<void>;
       setWordWrap: (value: boolean) => Promise<void>;
       showInFolder: (path: string) => Promise<void>;
       submitPullRequestComment: (

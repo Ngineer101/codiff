@@ -1,7 +1,6 @@
-import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffKeymap } from '../../config/types.ts';
 import type {
@@ -9,7 +8,6 @@ import type {
   PullRequestSource,
   SidebarMode,
   WalkthroughError,
-  WalkthroughNote,
 } from '../../lib/app-types.ts';
 import {
   formatLineCountNumber,
@@ -20,16 +18,8 @@ import {
 } from '../../lib/diff.ts';
 import { fileTreeSort, statusForTree } from '../../lib/files.ts';
 import { isNativeInputTarget } from '../../lib/keyboard.ts';
-import { renderInlineMarkdown } from '../../lib/markdown.tsx';
 import { getShortRef, getSourceKey } from '../../lib/source.ts';
-import { walkthroughActionLabel, walkthroughImpactLabel } from '../../lib/walkthrough.ts';
-import type {
-  ChangedFile,
-  HistoryEntry,
-  NarrativeWalkthrough,
-  ReviewSource,
-  Walkthrough,
-} from '../../types.ts';
+import type { ChangedFile, HistoryEntry, NarrativeWalkthrough, ReviewSource } from '../../types.ts';
 import { Gravatar } from './Gravatar.tsx';
 import { NarrativeSidebar } from './walkthrough/NarrativeSidebar.tsx';
 import type { NarrativeNavigation } from './walkthrough/useNarrativeNavigation.ts';
@@ -56,11 +46,8 @@ export function Sidebar({
   searchQuery,
   selectedPath,
   showWhitespace,
-  walkthroughAvailable,
   walkthroughError,
   walkthroughLoading,
-  walkthroughNotes,
-  walkthroughSummary,
   walkthroughUnread,
 }: {
   branchSource: Extract<ReviewSource, { type: 'branch' }> | null;
@@ -84,11 +71,8 @@ export function Sidebar({
   searchQuery: string;
   selectedPath: string | null;
   showWhitespace: boolean;
-  walkthroughAvailable: boolean;
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
-  walkthroughNotes: ReadonlyMap<string, WalkthroughNote>;
-  walkthroughSummary: Walkthrough['summary'] | null;
   walkthroughUnread: boolean;
 }) {
   const allowSelectionScroll = useRef(false);
@@ -335,15 +319,6 @@ export function Sidebar({
         />
       ) : mode === 'walkthrough' && narrativeWalkthrough ? (
         <NarrativeSidebar navigation={narrativeNavigation} walkthrough={narrativeWalkthrough} />
-      ) : mode === 'walkthrough' && walkthroughAvailable ? (
-        <WalkthroughSidebar
-          files={files}
-          onActivatePath={onActivatePath}
-          selectedPath={selectedPath}
-          showWhitespace={showWhitespace}
-          walkthroughNotes={walkthroughNotes}
-          walkthroughSummary={walkthroughSummary}
-        />
       ) : mode === 'walkthrough' ? (
         <>
           {walkthroughLoading ? (
@@ -612,142 +587,6 @@ function HistorySidebar({
           <span>Loading history…</span>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function WalkthroughSidebar({
-  files,
-  onActivatePath,
-  selectedPath,
-  showWhitespace,
-  walkthroughNotes,
-  walkthroughSummary,
-}: {
-  files: ReadonlyArray<ChangedFile>;
-  onActivatePath: (path: string) => void;
-  selectedPath: string | null;
-  showWhitespace: boolean;
-  walkthroughNotes: ReadonlyMap<string, WalkthroughNote>;
-  walkthroughSummary: Walkthrough['summary'] | null;
-}) {
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const groups = useMemo(() => {
-    const nextGroups: Array<{
-      files: Array<{ file: ChangedFile; note?: WalkthroughNote }>;
-      key: string;
-      reason: string;
-      title: string;
-    }> = [];
-    const groupsByTitle = new Map<string, (typeof nextGroups)[number]>();
-
-    for (const file of files) {
-      const note = walkthroughNotes.get(file.path);
-      const title = note?.groupTitle ?? 'Other changed files';
-      const reason = note?.groupReason ?? 'Review after the primary walkthrough.';
-      const key = `${title}:${reason}`;
-      let group = groupsByTitle.get(key);
-
-      if (!group) {
-        group = {
-          files: [],
-          key,
-          reason,
-          title,
-        };
-        groupsByTitle.set(key, group);
-        nextGroups.push(group);
-      }
-
-      group.files.push({ file, note });
-    }
-
-    return nextGroups;
-  }, [files, walkthroughNotes]);
-  const toggleGroupCollapsed = useCallback((key: string) => {
-    setCollapsedGroupKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
-
-  return (
-    <div className="walkthrough-list">
-      {walkthroughSummary ? (
-        <div className="walkthrough-summary">
-          <strong>Review Focus</strong>
-          <span>{renderInlineMarkdown(walkthroughSummary.focus)}</span>
-          <span>{renderInlineMarkdown(walkthroughSummary.skim)}</span>
-        </div>
-      ) : null}
-      {groups.map((group) => {
-        const collapsed = collapsedGroupKeys.has(group.key);
-        return (
-          <section className={`walkthrough-group${collapsed ? ' collapsed' : ''}`} key={group.key}>
-            <button
-              aria-expanded={!collapsed}
-              className="walkthrough-group-header"
-              onClick={() => toggleGroupCollapsed(group.key)}
-              title={`${group.title}. ${group.reason}`}
-              type="button"
-            >
-              <span className="walkthrough-group-title-row">
-                <span className="walkthrough-group-chevron-box">
-                  <CaretDown
-                    aria-hidden
-                    className="walkthrough-group-chevron"
-                    size={11}
-                    weight="bold"
-                  />
-                </span>
-                <span className="walkthrough-group-title">{group.title}</span>
-                <span className="walkthrough-group-count">{group.files.length}</span>
-              </span>
-              <small>{renderInlineMarkdown(group.reason)}</small>
-            </button>
-            {collapsed
-              ? null
-              : group.files.map(({ file, note }) => {
-                  const lineCount = getDiffLineCount(file, showWhitespace);
-                  return (
-                    <button
-                      className={`walkthrough-file${selectedPath === file.path ? ' selected' : ''}`}
-                      key={file.path}
-                      onClick={() => onActivatePath(file.path)}
-                      title={note?.reason ?? file.path}
-                      type="button"
-                    >
-                      <span className="walkthrough-file-title">
-                        <span className="walkthrough-file-path">{file.path}</span>
-                        <DiffLineCountBadge
-                          className="walkthrough-line-count"
-                          lineCount={lineCount}
-                        />
-                      </span>
-                      {note ? (
-                        <span className="walkthrough-file-meta">
-                          {walkthroughImpactLabel[note.impact]} ·{' '}
-                          {walkthroughActionLabel[note.action]}
-                        </span>
-                      ) : null}
-                      <span className="walkthrough-file-reason">
-                        {renderInlineMarkdown(
-                          note?.context ?? note?.reason ?? 'Review this changed file.',
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-          </section>
-        );
-      })}
     </div>
   );
 }

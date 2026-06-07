@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 
+// Launcher for the Codiff `codiff` skill (Codex). The agent has already authored a
+// narrative walkthrough JSON file; this just opens Codiff pointed at it, passing the
+// Codex thread id so follow-up questions reuse the conversation.
+//
+// Usage:
+//   node scripts/open-codiff.mjs --file <path> [target]
+//
+// `--file <path>` is forwarded to Codiff as `--walkthrough-file`. Any non-flag target
+// (commit, HEAD, PR number, or repository path) is forwarded verbatim; when no repository
+// path is given the session's working directory is used.
+
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath, URL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const threadId = process.env.CODEX_THREAD_ID || '';
 const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,10 +26,7 @@ const maxSessionScanFiles = 20_000;
 
 const getCodiffCommand = () => {
   if (process.env.CODIFF_COMMAND) {
-    return {
-      args: [],
-      command: process.env.CODIFF_COMMAND,
-    };
+    return { args: [], command: process.env.CODIFF_COMMAND };
   }
 
   const appCli = join(codiffRoot, 'bin/codiff-app');
@@ -27,31 +35,19 @@ const getCodiffCommand = () => {
     codiffRoot.includes('.app/Contents/Resources/app') &&
     existsSync(appCli)
   ) {
-    return {
-      args: [],
-      command: appCli,
-    };
+    return { args: [], command: appCli };
   }
 
   const devCli = join(codiffRoot, 'bin/codiff.js');
   if (existsSync(devCli)) {
-    return {
-      args: [devCli],
-      command: process.execPath,
-    };
+    return { args: [devCli], command: process.execPath };
   }
 
   if (process.platform === 'darwin' && existsSync(appCli)) {
-    return {
-      args: [],
-      command: appCli,
-    };
+    return { args: [], command: appCli };
   }
 
-  return {
-    args: [],
-    command: 'codiff',
-  };
+  return { args: [], command: 'codiff' };
 };
 
 const getCodexHome = () => process.env.CODEX_HOME || join(homedir(), '.codex');
@@ -68,7 +64,6 @@ const findCodexSessionFile = (sessionId) => {
 
   const stack = [root];
   let scanned = 0;
-
   while (stack.length > 0 && scanned < maxSessionScanFiles) {
     const directory = stack.pop();
     let entries;
@@ -90,11 +85,9 @@ const findCodexSessionFile = (sessionId) => {
       ) {
         return path;
       }
-
       if (entry.isDirectory()) {
         stack.push(path);
       }
-
       if (scanned >= maxSessionScanFiles) {
         break;
       }
@@ -115,7 +108,6 @@ const readSessionCwd = (sessionId) => {
     if (!line.trim()) {
       continue;
     }
-
     try {
       const item = JSON.parse(line);
       const value = item?.payload?.cwd || item?.cwd;
@@ -130,72 +122,68 @@ const readSessionCwd = (sessionId) => {
   return cwd;
 };
 
-const isPullRequestMarker = (arg) => /^(?:pr|pull-request)$/i.test(arg);
+const rawArgs = process.argv.slice(2);
 
-const isReviewSource = (arg) => {
-  if (/^#?[1-9]\d*$/.test(arg)) {
-    return true;
+// `--guide`: print Codiff's current walkthrough authoring guide and exit. The
+// guidance lives in Codiff (not this skill), so it stays current across updates.
+if (rawArgs.includes('--guide')) {
+  const binEntry = join(codiffRoot, 'bin/codiff.js');
+  const guide = existsSync(binEntry)
+    ? { args: [binEntry, '--walkthrough-guide'], command: process.execPath }
+    : (() => {
+        const resolved = getCodiffCommand();
+        return { args: [...resolved.args, '--walkthrough-guide'], command: resolved.command };
+      })();
+  const guideResult = spawnSync(guide.command, guide.args, { encoding: 'utf8', stdio: 'inherit' });
+  if (guideResult.error) {
+    process.stderr.write(`${guideResult.error.message}\n`);
+    process.exit(1);
   }
+  process.exit(guideResult.status ?? 0);
+}
 
-  if (/^(?:HEAD|@)(?:(?:[~^]\d*)|\^\{[^}]+\}|@\{[^}]+\})*$/.test(arg)) {
-    return true;
+// Pull `--file <path>` (or `--file=<path>`) out of the forwarded arguments.
+const forwardedArgs = [];
+let walkthroughFile = '';
+for (let index = 0; index < rawArgs.length; index += 1) {
+  const arg = rawArgs[index];
+  if (arg === '--file') {
+    walkthroughFile = rawArgs[index + 1] || '';
+    index += 1;
+    continue;
   }
-
-  if (/^[0-9a-f]{4,64}$/i.test(arg)) {
-    return true;
+  if (arg.startsWith('--file=')) {
+    walkthroughFile = arg.slice('--file='.length);
+    continue;
   }
+  forwardedArgs.push(arg);
+}
 
-  try {
-    const url = new URL(arg);
-    return (
-      url.hostname.toLowerCase() === 'github.com' &&
-      /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/.test(url.pathname)
-    );
-  } catch {
-    return /(?:\^|~|@\{[^}]+\})/.test(arg);
-  }
-};
+if (!walkthroughFile) {
+  process.stderr.write('open-codiff: missing --file <path> to the walkthrough JSON.\n');
+  process.exit(1);
+}
 
-const hasRepositoryTarget = (argv, baseCwd) => {
-  const optionsWithValues = new Set(['--codex-session', '--commit', '--walkthrough-context']);
+const sessionCwd = process.env.CODEX_SESSION_CWD || readSessionCwd(threadId) || process.cwd();
+const walkthroughFilePath = resolve(sessionCwd, walkthroughFile);
+if (!existsSync(walkthroughFilePath)) {
+  process.stderr.write(`open-codiff: walkthrough file not found at ${walkthroughFilePath}.\n`);
+  process.exit(1);
+}
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (optionsWithValues.has(arg)) {
-      index += 1;
-      continue;
-    }
-
-    if (arg.startsWith('-')) {
-      continue;
-    }
-
-    if (isPullRequestMarker(arg)) {
-      index += 1;
-      continue;
-    }
-
-    if (isReviewSource(arg)) {
-      continue;
-    }
-
-    if (existsSync(resolve(baseCwd, arg))) {
-      return true;
-    }
-  }
-
-  return false;
-};
+const hasRepositoryTarget = forwardedArgs.some(
+  (arg) => !arg.startsWith('-') && existsSync(resolve(sessionCwd, arg)),
+);
 
 const codiffCommand = getCodiffCommand();
-const forwardedArgs = process.argv.slice(2);
-const sessionCwd = process.env.CODEX_SESSION_CWD || readSessionCwd(threadId) || process.cwd();
 const args = [
   ...codiffCommand.args,
   '-w',
+  '--walkthrough-file',
+  walkthroughFilePath,
   ...(threadId ? ['--codex-session', threadId] : []),
   ...forwardedArgs,
-  ...(hasRepositoryTarget(forwardedArgs, sessionCwd) ? [] : [sessionCwd]),
+  ...(hasRepositoryTarget ? [] : [sessionCwd]),
 ];
 const result = spawnSync(codiffCommand.command, args, {
   encoding: 'utf8',

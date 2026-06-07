@@ -157,6 +157,24 @@ const getCodexLaunchError = (error) => {
   return new Error(message);
 };
 
+/** @param {string} value */
+const getCodexStructuredErrorMessage = (value) => {
+  const matches = Array.from(value.matchAll(/\bERROR:\s*(\{[^\n]+\})/g));
+  for (const match of matches.reverse()) {
+    try {
+      const payload = JSON.parse(match[1]);
+      const message = payload?.error?.message || payload?.message;
+      if (typeof message === 'string' && message.trim()) {
+        return message.trim();
+      }
+    } catch {
+      // Ignore malformed CLI diagnostics and fall back to the raw stream.
+    }
+  }
+
+  return null;
+};
+
 /** @param {unknown} value @returns {string} */
 const normalizeOpenAIModel = (value) =>
   normalizeEnum(value, OPENAI_MODEL_IDS, DEFAULT_OPENAI_MODEL);
@@ -258,8 +276,9 @@ const runCodex = async (
           clearTimeout(timer);
 
           if (code !== 0) {
+            const rawMessage = stderr || stdout || stdinError?.message || '';
             const message = oneLine(
-              stderr || stdout || stdinError?.message,
+              getCodexStructuredErrorMessage(rawMessage) || rawMessage,
               signal ? `Codex was terminated by ${signal}.` : `Codex exited with code ${code}.`,
             );
             reject(

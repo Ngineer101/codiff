@@ -32,7 +32,7 @@ export const flagDefinitions = [
     type: 'boolean',
   },
   {
-    description: 'Start with an LLM-generated review walkthrough.',
+    description: 'Start with an LLM-generated narrative walkthrough.',
     name: 'walkthrough',
     short: 'w',
     type: 'boolean',
@@ -63,8 +63,8 @@ export const usageExamples = [
   { command: 'codiff a1b2c3d', description: 'Review a specific commit.' },
   { command: "codiff '#75'", description: 'Review pull request #75.' },
   { command: 'codiff pr 75', description: 'Review pull request #75 (alternate syntax).' },
-  { command: 'codiff -w', description: 'Start with an LLM walkthrough.' },
-  { command: 'codiff -w a1b2c3d', description: 'Walkthrough a specific commit.' },
+  { command: 'codiff -w', description: 'Start with an LLM narrative walkthrough.' },
+  { command: 'codiff -w a1b2c3d', description: 'Generate a narrative walkthrough for a commit.' },
 ];
 
 const parseArgsOptions = Object.fromEntries(

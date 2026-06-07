@@ -530,10 +530,12 @@ test('Codex skill launcher uses the session cwd as the repository target', async
   const sessionPath = join(sessionDirectory, `rollout-${sessionId}.jsonl`);
   const fakeCodiff = join(directory, 'codiff');
   const logPath = join(directory, 'args.txt');
+  const walkthroughFile = join(directory, 'walkthrough.json');
 
   try {
     await mkdir(repositoryPath, { recursive: true });
     await mkdir(sessionDirectory, { recursive: true });
+    await writeFile(walkthroughFile, '{}');
     await writeFile(
       sessionPath,
       `${JSON.stringify({
@@ -549,7 +551,7 @@ test('Codex skill launcher uses the session cwd as the repository target', async
 
     await execFileAsync(
       process.execPath,
-      [resolve('codex/skills/codiff/scripts/open-codiff.mjs'), 'HEAD'],
+      [resolve('codex/skills/codiff/scripts/open-codiff.mjs'), '--file', walkthroughFile, 'HEAD'],
       {
         cwd: resolve('codex/skills/codiff'),
         env: {
@@ -564,6 +566,8 @@ test('Codex skill launcher uses the session cwd as the repository target', async
 
     expect((await readFile(logPath, 'utf8')).trim().split('\n')).toEqual([
       '-w',
+      '--walkthrough-file',
+      walkthroughFile,
       '--codex-session',
       sessionId,
       'HEAD',
@@ -580,10 +584,12 @@ test('Codex skill launcher does not override explicit repository targets', async
   const explicitRepositoryPath = join(directory, 'explicit-repo');
   const fakeCodiff = join(directory, 'codiff');
   const logPath = join(directory, 'args.txt');
+  const walkthroughFile = join(directory, 'walkthrough.json');
 
   try {
     await mkdir(sessionRepositoryPath, { recursive: true });
     await mkdir(explicitRepositoryPath, { recursive: true });
+    await writeFile(walkthroughFile, '{}');
     await writeFile(
       fakeCodiff,
       '#!/bin/sh\nfor arg in "$@"; do\n  printf "%s\\n" "$arg" >> "$OPEN_ARGS_FILE"\ndone\n',
@@ -592,7 +598,12 @@ test('Codex skill launcher does not override explicit repository targets', async
 
     await execFileAsync(
       process.execPath,
-      [resolve('codex/skills/codiff/scripts/open-codiff.mjs'), explicitRepositoryPath],
+      [
+        resolve('codex/skills/codiff/scripts/open-codiff.mjs'),
+        '--file',
+        walkthroughFile,
+        explicitRepositoryPath,
+      ],
       {
         cwd: resolve('codex/skills/codiff'),
         env: {
@@ -607,6 +618,8 @@ test('Codex skill launcher does not override explicit repository targets', async
 
     expect((await readFile(logPath, 'utf8')).trim().split('\n')).toEqual([
       '-w',
+      '--walkthrough-file',
+      walkthroughFile,
       explicitRepositoryPath,
     ]);
   } finally {
@@ -623,10 +636,12 @@ test('Claude skill launcher uses the session cwd and forwards --agent claude', a
   const sessionPath = join(projectDirectory, `${sessionId}.jsonl`);
   const fakeCodiff = join(directory, 'codiff');
   const logPath = join(directory, 'args.txt');
+  const walkthroughFile = join(directory, 'walkthrough.json');
 
   try {
     await mkdir(repositoryPath, { recursive: true });
     await mkdir(projectDirectory, { recursive: true });
+    await writeFile(walkthroughFile, '{}');
     await writeFile(sessionPath, `${JSON.stringify({ cwd: repositoryPath })}\n`);
     await writeFile(
       fakeCodiff,
@@ -636,7 +651,7 @@ test('Claude skill launcher uses the session cwd and forwards --agent claude', a
 
     await execFileAsync(
       process.execPath,
-      [resolve('claude/skills/codiff/scripts/open-codiff.mjs'), 'HEAD'],
+      [resolve('claude/skills/codiff/scripts/open-codiff.mjs'), '--file', walkthroughFile, 'HEAD'],
       {
         cwd: resolve('claude/skills/codiff'),
         env: {
@@ -653,6 +668,8 @@ test('Claude skill launcher uses the session cwd and forwards --agent claude', a
       '-w',
       '--agent',
       'claude',
+      '--walkthrough-file',
+      walkthroughFile,
       '--claude-session',
       sessionId,
       'HEAD',
@@ -750,7 +767,7 @@ test('formatHelpText styles titles and descriptions', () => {
   expect(text).toContain('\u001b[90mShow this help message and exit.\u001b[0m');
   expect(text).toContain('  codiff -w');
   expect(text).not.toContain('\u001b[1;34mcodiff -w\u001b[0m');
-  expect(text).toContain('\u001b[90mStart with an LLM walkthrough.\u001b[0m');
+  expect(text).toContain('\u001b[90mStart with an LLM narrative walkthrough.\u001b[0m');
 });
 
 test('codiff-app --help prints help text and exits 0', async () => {
