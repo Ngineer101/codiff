@@ -38,6 +38,11 @@ const stopEstimateHeight = (stop: WalkthroughStopView) => {
   return Math.max(520, Math.min(1600, 260 + files * 120 + changedLines * 14));
 };
 
+const createVisibleIndexSet = (length: number, index: number) => {
+  const indexes = [index - 1, index, index + 1].filter((item) => item >= 0 && item < length);
+  return new Set(indexes);
+};
+
 /** Renders the live diff for one changed file via the real ReviewCodeView. */
 export type RenderStopDiff = (file: ChangedFile, note?: string) => ReactNode;
 
@@ -79,7 +84,7 @@ function StopBlock({
           </h2>
           <ImportancePill importance={stop.importance} />
         </div>
-        <Narration prose={stop.prose} />
+        <Narration prose={stop.body} />
       </div>
       <div className="wt-stop-diff-host">
         {resolvedFiles.length > 0 ? (
@@ -178,6 +183,18 @@ function SequenceScroll({
   const commandScrollIgnoreUntilRef = useRef(0);
   const { scrollTarget, syncIndexFromScroll } = navigation;
   const [heightBySegment, setHeightBySegment] = useState<Readonly<Record<string, number>>>({});
+  const orderKey = orderView.sequence.map((stop) => stop.segmentId).join('\0');
+  const [visibleIndexState, setVisibleIndexState] = useState<{
+    indexes: ReadonlySet<number>;
+    orderKey: string;
+  }>(() => ({
+    indexes: createVisibleIndexSet(orderView.sequence.length, navigation.index),
+    orderKey,
+  }));
+  const visibleIndexes =
+    visibleIndexState.orderKey === orderKey
+      ? visibleIndexState.indexes
+      : createVisibleIndexSet(orderView.sequence.length, scrollTarget.index);
 
   const getStopHeight = useCallback(
     (stop: WalkthroughStopView) => heightBySegment[stop.segmentId] ?? stopEstimateHeight(stop),
@@ -205,7 +222,64 @@ function SequenceScroll({
 
   useEffect(() => {
     blockRefs.current = blockRefs.current.slice(0, orderView.sequence.length);
-  }, [orderView]);
+  }, [orderView.sequence.length]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+    if (typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+    const elements: Array<HTMLElement> = [];
+    for (const element of blockRefs.current) {
+      if (element) {
+        elements.push(element);
+      }
+    }
+    if (elements.length === 0) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisibleIndexState((current) => {
+          const currentIndexes =
+            current.orderKey === orderKey
+              ? current.indexes
+              : createVisibleIndexSet(orderView.sequence.length, scrollTarget.index);
+          const next = new Set(currentIndexes);
+          let changed = false;
+          for (const entry of entries) {
+            const index = blockRefs.current.indexOf(entry.target as HTMLElement);
+            if (index === -1) {
+              continue;
+            }
+            if (entry.isIntersecting) {
+              if (!next.has(index)) {
+                next.add(index);
+                changed = true;
+              }
+            } else if (next.delete(index)) {
+              changed = true;
+            }
+          }
+          return changed ? { indexes: next, orderKey } : current;
+        });
+      },
+      {
+        root: container,
+        rootMargin: '640px 0px',
+        threshold: 0,
+      },
+    );
+
+    for (const element of elements) {
+      observer.observe(element);
+    }
+    return () => observer.disconnect();
+  }, [heightBySegment, orderKey, orderView.sequence.length, scrollTarget.index, visibleIndexes]);
 
   // Derive the focused stop from scroll: it's the last block whose top has
   // crossed an activation line a little below the top of the viewport.
@@ -259,21 +333,30 @@ function SequenceScroll({
     if (!container || !el) {
       return;
     }
+    setVisibleIndexState((current) => {
+      const currentIndexes =
+        current.orderKey === orderKey
+          ? current.indexes
+          : createVisibleIndexSet(orderView.sequence.length, scrollTarget.index);
+      const next = new Set(currentIndexes);
+      for (const index of createVisibleIndexSet(orderView.sequence.length, scrollTarget.index)) {
+        next.add(index);
+      }
+      return { indexes: next, orderKey };
+    });
     commandScrollIgnoreUntilRef.current = performance.now() + 80;
     container.scrollTo({
       behavior: 'instant',
       top: el.offsetTop,
     });
-  }, [scrollTarget]);
+  }, [orderKey, orderView.sequence.length, scrollTarget]);
 
   const currentIndex = navigation.mode === 'stop' ? navigation.index : scrollTarget.index;
-  const visibleStart = Math.max(0, currentIndex - 1);
-  const visibleEnd = Math.min(orderView.sequence.length - 1, currentIndex + 1);
 
   return (
     <div className="wt-stop wt-sequence" ref={scrollRef}>
       {orderView.sequence.map((stop, i) => {
-        const isVisible = i >= visibleStart && i <= visibleEnd;
+        const isVisible = visibleIndexes.has(i);
         if (isVisible) {
           return (
             <MeasuredStop

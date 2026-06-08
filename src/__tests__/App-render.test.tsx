@@ -858,53 +858,42 @@ test('narrative walkthrough stops do not repeat commit details', async () => {
   } satisfies CommitMetadata;
   const narrativeWalkthrough = {
     agent: 'codex',
-    defaultOrder: 'keys',
-    focus: 'Focus.',
-    generatedAt: '2026-06-07T00:00:00.000Z',
-    kind: 'narrative',
-    orders: [
+    chapters: [
       {
-        id: 'keys',
-        label: 'Key changes',
-        phases: [
+        blurb: 'Review the implementation.',
+        icon: 'gear',
+        id: 'impl',
+        stops: [
           {
-            blurb: 'Review the implementation.',
-            icon: 'gear',
-            id: 'impl',
-            n: 1,
-            title: 'Implementation',
-          },
-        ],
-        rest: [],
-        restBlurb: 'Nothing else.',
-        restLabel: 'The rest',
-        sequence: [
-          {
+            anchors: [
+              {
+                added: 1,
+                anchor: { display: 'src/app.ts', sectionId: 'src/app.ts:unstaged', side: 'both' },
+                deleted: 1,
+                granularity: 'file',
+                id: 's1',
+                path: 'src/app.ts',
+                status: 'modified',
+              },
+            ],
+            body: 'Review this file without repeating the commit header.',
+            id: 'implementation-path',
             importance: 'critical',
-            phaseId: 'impl',
-            prose: 'Review this file without repeating the commit header.',
-            segmentId: 's1',
+            summary: 'The implementation path carries the commit review.',
             title: 'Implementation path',
           },
         ],
-        tagline: 'Follow the implementation.',
+        title: 'Implementation',
       },
     ],
+    focus: 'Focus.',
+    generatedAt: '2026-06-07T00:00:00.000Z',
+    kind: 'narrative',
     repo: { branch: 'main', root: '/repo' },
-    segments: [
-      {
-        added: 1,
-        anchor: { display: 'src/app.ts', sectionId: 'src/app.ts:unstaged', side: 'both' },
-        deleted: 1,
-        granularity: 'file',
-        id: 's1',
-        path: 'src/app.ts',
-        status: 'modified',
-      },
-    ],
     source,
+    support: [],
     title: 'Narrative',
-    version: 2,
+    version: 3,
   } satisfies NarrativeWalkthrough;
 
   window.codiff = createCodiffMock({

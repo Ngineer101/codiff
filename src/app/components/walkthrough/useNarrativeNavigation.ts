@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildOrderView, resolveOrder } from '../../../lib/narrative-walkthrough.ts';
+import {
+  buildOrderView,
+  collectWalkthroughSegments,
+  resolveOrder,
+} from '../../../lib/narrative-walkthrough.ts';
 import type { ChangedFile, NarrativeWalkthrough } from '../../../types.ts';
 
 export type NarrativeViewMode = 'stop' | 'rest' | 'commit';
@@ -20,7 +24,7 @@ const collectCommitPaths = (
   if (!walkthrough) {
     return paths;
   }
-  for (const segment of walkthrough.segments) {
+  for (const segment of collectWalkthroughSegments(walkthrough)) {
     if (!seen.has(segment.path)) {
       seen.add(segment.path);
       paths.push(segment.path);
@@ -43,9 +47,7 @@ export const useNarrativeNavigation = (
   resetKey = '',
 ) => {
   const [orderId, setOrderId] = useState<string>(() =>
-    walkthrough
-      ? (resolveOrder(walkthrough, preferredOrderId)?.id ?? walkthrough.defaultOrder)
-      : '',
+    walkthrough ? (resolveOrder(walkthrough, preferredOrderId)?.id ?? 'walkthrough') : '',
   );
   const [mode, setMode] = useState<NarrativeViewMode>('stop');
   const [index, setIndex] = useState(0);
@@ -60,7 +62,7 @@ export const useNarrativeNavigation = (
   const [restVisited, setRestVisited] = useState(false);
   const [visited, setVisited] = useState<ReadonlySet<string>>(() => {
     const firstSegment = walkthrough
-      ? resolveOrder(walkthrough, preferredOrderId)?.sequence[0]?.segmentId
+      ? resolveOrder(walkthrough, preferredOrderId)?.sequence[0]?.segmentIds[0]
       : undefined;
     return new Set(firstSegment ? [firstSegment] : []);
   });
@@ -101,12 +103,12 @@ export const useNarrativeNavigation = (
     }
     seededFor.current = walkthrough;
     const order = resolveOrder(walkthrough, preferredOrderId);
-    setOrderId(order?.id ?? walkthrough.defaultOrder);
+    setOrderId(order?.id ?? 'walkthrough');
     setMode('stop');
     setIndex(0);
     setScrollTarget({ index: 0, nonce: 0 });
     setRestVisited(false);
-    const firstSegment = order?.sequence[0]?.segmentId;
+    const firstSegment = order?.sequence[0]?.segmentIds[0];
     setVisited(new Set(firstSegment ? [firstSegment] : []));
   }, [files, preferredOrderId, walkthrough]);
 

@@ -578,6 +578,46 @@ test('Codex skill launcher uses the session cwd as the repository target', async
   }
 });
 
+test('Codex skill launcher falls back to the source repo when run from the skill directory', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codiff-skill-launcher-'));
+  const fakeCodiff = join(directory, 'codiff');
+  const logPath = join(directory, 'args.txt');
+  const walkthroughFile = join(directory, 'walkthrough.json');
+
+  try {
+    await writeFile(walkthroughFile, '{}');
+    await writeFile(
+      fakeCodiff,
+      '#!/bin/sh\nfor arg in "$@"; do\n  printf "%s\\n" "$arg" >> "$OPEN_ARGS_FILE"\ndone\n',
+    );
+    await chmod(fakeCodiff, 0o755);
+
+    await execFileAsync(
+      process.execPath,
+      [resolve('codex/skills/codiff/scripts/open-codiff.mjs'), '--file', walkthroughFile],
+      {
+        cwd: resolve('codex/skills/codiff'),
+        env: {
+          ...process.env,
+          CODEX_HOME: join(directory, 'home', '.codex'),
+          CODEX_THREAD_ID: '',
+          CODIFF_COMMAND: fakeCodiff,
+          OPEN_ARGS_FILE: logPath,
+        },
+      },
+    );
+
+    expect((await readFile(logPath, 'utf8')).trim().split('\n')).toEqual([
+      '-w',
+      '--walkthrough-file',
+      walkthroughFile,
+      resolve('.'),
+    ]);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test('Codex skill launcher does not override explicit repository targets', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codiff-skill-launcher-'));
   const sessionRepositoryPath = join(directory, 'session-repo');
@@ -814,19 +854,19 @@ test('codiff --walkthrough-guide prints the guide and embedded schema, then exit
 
   // The authoring prose...
   expect(stdout).toContain('Narrative walkthrough — authoring guide');
-  expect(stdout).toContain('segments');
-  expect(stdout).toContain('orders');
+  expect(stdout).toContain('chapters');
+  expect(stdout).toContain('support');
   // ...followed by the live JSON schema, embedded as a fenced block.
   expect(stdout).toContain('```json');
-  expect(stdout).toContain('"defaultOrder"');
-  expect(stdout).toContain('"const": 2');
+  expect(stdout).toContain('"chapters"');
+  expect(stdout).toContain('"const": 3');
 });
 
 test('the walkthrough authoring guide file exists and is non-trivial', async () => {
   const guide = await readFile(resolve('bin/walkthrough-guide.md'), 'utf8');
   expect(guide.length).toBeGreaterThan(500);
-  expect(guide).toContain('segments');
-  expect(guide).toContain('orders');
+  expect(guide).toContain('chapters');
+  expect(guide).toContain('support');
 });
 
 test('parseArguments reads base...head and base..head as a range', async () => {

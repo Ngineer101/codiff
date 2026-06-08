@@ -3,6 +3,7 @@ import {
   buildCommitModel,
   buildGenericCommitModel,
   buildOrderView,
+  collectWalkthroughSegments,
   isWalkthroughCommittable,
   resolveOrder,
   resolveSegmentFile,
@@ -11,95 +12,117 @@ import type { ChangedFile, NarrativeWalkthrough } from '../types.ts';
 
 const walkthrough = (): NarrativeWalkthrough => ({
   agent: 'claude',
-  defaultOrder: 'keys',
+  chapters: [
+    {
+      blurb: 'The bug.',
+      icon: 'bug',
+      id: 'bug',
+      stops: [
+        {
+          anchors: [
+            {
+              added: 1,
+              anchor: {
+                display: 'src/App.tsx:311',
+                sectionId: 'src/App.tsx:staged',
+                side: 'both',
+              },
+              deleted: 1,
+              granularity: 'line',
+              id: 's1',
+              path: 'src/App.tsx',
+              status: 'modified',
+            },
+          ],
+          body: 'Bug.',
+          id: 'stop-1',
+          importance: 'critical',
+          summary: 'The current file order drives navigation.',
+          title: 'Bug',
+        },
+      ],
+      title: 'The bug',
+    },
+    {
+      blurb: 'The proof.',
+      icon: 'flask',
+      id: 'proof',
+      stops: [
+        {
+          anchors: [
+            {
+              added: 14,
+              anchor: { display: 'test.ts (new)' },
+              deleted: 0,
+              granularity: 'file',
+              id: 's2',
+              path: 'src/test.ts',
+              status: 'added',
+            },
+          ],
+          body: 'Test.',
+          id: 'stop-2',
+          importance: 'normal',
+          summary: 'The regression test locks the navigation order.',
+          title: 'Proof',
+        },
+      ],
+      title: 'Proof',
+    },
+  ],
   focus: 'Focus.',
   generatedAt: '2026-06-05T00:00:00.000Z',
   kind: 'narrative',
-  orders: [
-    {
-      id: 'keys',
-      label: 'Key changes first',
-      phases: [
-        { blurb: 'The bug.', icon: 'bug', id: 'bug', n: 1, title: 'The bug' },
-        { blurb: 'The proof.', icon: 'flask', id: 'proof', n: 2, title: 'Proof' },
-      ],
-      rest: [
-        { note: 'Regenerated.', reason: 'Lockfile', segmentId: 'lock' },
-        { note: 'Mirror.', reason: 'Mechanical', segmentId: 'mirror' },
-      ],
-      restBlurb: 'Skim only.',
-      restLabel: 'Not in the arc',
-      sequence: [
-        { importance: 'critical', phaseId: 'bug', prose: 'Bug.', segmentId: 's1' },
-        { importance: 'normal', phaseId: 'proof', prose: 'Test.', segmentId: 's2' },
-      ],
-      tagline: 'Cause leads.',
-    },
-    {
-      id: 'results',
-      label: 'Results first',
-      phases: [{ blurb: 'Proof.', icon: 'flask', id: 'results', n: 1, title: 'Results' }],
-      rest: [{ note: 'Regenerated.', reason: 'Lockfile', segmentId: 'lock' }],
-      restBlurb: 'Just noise.',
-      restLabel: 'Just mechanical',
-      sequence: [
-        { importance: 'normal', phaseId: 'results', prose: 'Test leads.', segmentId: 's2' },
-      ],
-      tagline: 'Outcomes lead.',
-    },
-  ],
   repo: { branch: 'main', root: '/repo' },
-  segments: [
+  source: { type: 'working-tree' },
+  support: [
     {
-      added: 1,
-      anchor: { display: 'src/App.tsx:311', sectionId: 'src/App.tsx:staged', side: 'both' },
-      deleted: 1,
-      granularity: 'line',
-      id: 's1',
-      path: 'src/App.tsx',
-      status: 'modified',
+      files: [
+        {
+          added: 312,
+          anchor: { display: 'pnpm-lock.yaml' },
+          deleted: 180,
+          granularity: 'file',
+          id: 'lock',
+          path: 'pnpm-lock.yaml',
+          status: 'modified',
+        },
+      ],
+      id: 'lockfiles',
+      note: 'Regenerated.',
+      title: 'Lockfile',
     },
     {
-      added: 14,
-      anchor: { display: 'test.ts (new)' },
-      deleted: 0,
-      granularity: 'file',
-      id: 's2',
-      path: 'src/test.ts',
-      status: 'added',
-    },
-    {
-      added: 312,
-      anchor: { display: 'pnpm-lock.yaml' },
-      deleted: 180,
-      granularity: 'file',
-      id: 'lock',
-      path: 'pnpm-lock.yaml',
-      status: 'modified',
-    },
-    {
-      added: 5,
-      anchor: { display: 'mirror.ts' },
-      deleted: 0,
-      granularity: 'file',
-      id: 'mirror',
-      path: 'mirror.ts',
-      status: 'added',
+      files: [
+        {
+          added: 5,
+          anchor: { display: 'mirror.ts' },
+          deleted: 0,
+          granularity: 'file',
+          id: 'mirror',
+          path: 'mirror.ts',
+          status: 'added',
+        },
+      ],
+      id: 'mechanical',
+      note: 'Mirror.',
+      title: 'Mechanical',
     },
   ],
-  source: { type: 'working-tree' },
   title: 'Title',
-  version: 2,
+  version: 3,
 });
 
-test('resolveOrder honours id, then default, then first', () => {
-  const wt = walkthrough();
-  expect(resolveOrder(wt, 'results')?.id).toBe('results');
-  expect(resolveOrder(wt, undefined)?.id).toBe('keys');
-  expect(resolveOrder(wt, 'nope')?.id).toBe('keys');
+test('resolveOrder builds the UI adapter order', () => {
+  const order = resolveOrder(walkthrough(), 'anything')!;
+
+  expect(order.id).toBe('walkthrough');
+  expect(order.phases.map((phase) => phase.id)).toEqual(['bug', 'proof']);
+  expect(order.sequence.map((stop) => stop.segmentIds)).toEqual([['s1'], ['s2']]);
+  expect(order.rest.map((item) => item.segmentId)).toEqual(['lock', 'mirror']);
 });
 
-test('buildOrderView indexes stops, fills phases, and resolves segments', () => {
+test('buildOrderView indexes stops, fills phases, and resolves anchors', () => {
   const view = buildOrderView(walkthrough(), 'keys')!;
 
   expect(view.sequence.map((stop) => stop.index)).toEqual([0, 1]);
@@ -111,59 +134,23 @@ test('buildOrderView indexes stops, fills phases, and resolves segments', () => 
   expect(view.totals).toEqual({ added: 15, deleted: 1 });
 });
 
-test('buildOrderView orders phases by their first stop in the sequence', () => {
+test('buildOrderView keeps multiple anchors under the same stop', () => {
   const base = walkthrough();
   const wt: NarrativeWalkthrough = {
     ...base,
-    orders: [
+    chapters: [
       {
-        ...base.orders[0],
-        phases: [
-          { blurb: 'The bug.', icon: 'bug', id: 'bug', n: 1, title: 'Bug' },
-          { blurb: 'Routing.', icon: 'path', id: 'routing', n: 4, title: 'Routing' },
-          { blurb: 'The proof.', icon: 'flask', id: 'proof', n: 2, title: 'Proof' },
-        ],
-        sequence: [
-          { importance: 'critical', phaseId: 'bug', prose: 'Bug.', segmentId: 's1' },
-          { importance: 'normal', phaseId: 'proof', prose: 'Proof.', segmentId: 's2' },
-          { importance: 'normal', phaseId: 'proof', prose: 'More proof.', segmentId: 'mirror' },
-          { importance: 'normal', phaseId: 'routing', prose: 'Routing.', segmentId: 'lock' },
-        ],
-      },
-      base.orders[1],
-    ],
-  };
-
-  const view = buildOrderView(wt, 'keys')!;
-
-  expect(view.phases.map((phase) => phase.id)).toEqual(['bug', 'proof', 'routing']);
-  expect(view.phases.map((phase) => phase.stops.map((stop) => stop.index + 1))).toEqual([
-    [1],
-    [2, 3],
-    [4],
-  ]);
-});
-
-test('buildOrderView keeps related files under the same narrative stop', () => {
-  const base = walkthrough();
-  const wt: NarrativeWalkthrough = {
-    ...base,
-    orders: [
-      {
-        ...base.orders[0],
-        rest: base.orders[0].rest.filter((item) => item.segmentId !== 's2'),
-        sequence: [
+        ...base.chapters[0],
+        stops: [
           {
-            importance: 'critical',
-            phaseId: 'bug',
-            prose: 'Bug and proof belong together.',
-            relatedSegmentIds: ['s2'],
-            segmentId: 's1',
+            ...base.chapters[0].stops[0],
+            anchors: [base.chapters[0].stops[0].anchors[0], base.chapters[1].stops[0].anchors[0]],
+            body: 'Bug and proof belong together.',
           },
         ],
       },
-      base.orders[1],
     ],
+    support: base.support,
   };
 
   const view = buildOrderView(wt, 'keys')!;
@@ -171,11 +158,10 @@ test('buildOrderView keeps related files under the same narrative stop', () => {
   expect(view.sequence).toHaveLength(1);
   expect(view.sequence[0].segmentId).toBe('s1');
   expect(view.sequence[0].relatedSegments.map((segment) => segment.id)).toEqual(['s2']);
-  expect(view.phases[0].stops.map((stop) => stop.segmentId)).toEqual(['s1']);
   expect(view.totals).toEqual({ added: 15, deleted: 1 });
 });
 
-test('buildOrderView groups the rest by reason and totals it', () => {
+test('buildOrderView groups support by title and totals it', () => {
   const view = buildOrderView(walkthrough(), 'keys')!;
 
   expect(view.restByReason.map((group) => group.reason)).toEqual(['Lockfile', 'Mechanical']);
@@ -183,27 +169,14 @@ test('buildOrderView groups the rest by reason and totals it', () => {
   expect(view.restTotals).toEqual({ added: 317, deleted: 180 });
 });
 
-test('the same segment can lead one order and rest in another', () => {
-  const wt = walkthrough();
-  const keys = buildOrderView(wt, 'keys')!;
-  const results = buildOrderView(wt, 'results')!;
-
-  // s2 is a proof stop under keys, and a lead stop under results.
-  expect(keys.sequence.some((stop) => stop.segmentId === 's2')).toBe(true);
-  expect(results.sequence[0].segmentId).toBe('s2');
-  // 'mirror' rests under keys but isn't referenced by results at all.
-  expect(keys.rest.some((item) => item.segmentId === 'mirror')).toBe(true);
-  expect(results.rest.map((item) => item.segmentId)).toEqual(['lock']);
-});
-
-test('buildCommitModel collapses the order into phase groups plus the rest', () => {
+test('buildCommitModel collapses chapters plus support into commit groups', () => {
   const view = buildOrderView(walkthrough(), 'keys')!;
   const model = buildCommitModel(view);
 
   expect(model.groups.map((group) => [group.title, group.isRest])).toEqual([
     ['The bug', false],
     ['Proof', false],
-    ['Not in the arc', true],
+    ['Support', true],
   ]);
   expect(model.groups[2].files.map((file) => file.path)).toEqual(['pnpm-lock.yaml', 'mirror.ts']);
   expect(model.files.map((file) => file.path)).toEqual([
@@ -214,52 +187,33 @@ test('buildCommitModel collapses the order into phase groups plus the rest', () 
   ]);
 });
 
-test('buildCommitModel includes related files in the stop phase group', () => {
+test('buildCommitModel carries per-file change-type tags and notes onto rows', () => {
   const base = walkthrough();
-  const wt: NarrativeWalkthrough = {
+  const withTags: NarrativeWalkthrough = {
     ...base,
-    orders: [
-      {
-        ...base.orders[0],
-        sequence: [
-          {
-            importance: 'critical',
-            phaseId: 'bug',
-            prose: 'Bug and proof belong together.',
-            relatedSegmentIds: ['s2'],
-            segmentId: 's1',
-          },
-        ],
-      },
-      base.orders[1],
-    ],
+    chapters: base.chapters.map((chapter) => ({
+      ...chapter,
+      stops: chapter.stops.map((stop) => ({
+        ...stop,
+        anchors: stop.anchors.map((anchor) =>
+          anchor.id === 's1'
+            ? { ...anchor, changeType: 'fix', commitNote: 'reorder the hunks' }
+            : anchor.id === 's2'
+              ? { ...anchor, changeType: 'test', commitNote: 'lock the regression' }
+              : anchor,
+        ),
+      })),
+    })),
+    support: base.support.map((group) => ({
+      ...group,
+      files: group.files.map((file) =>
+        file.id === 'lock' ? { ...file, changeType: 'lockfile' } : file,
+      ),
+    })),
   };
-
-  const model = buildCommitModel(buildOrderView(wt, 'keys')!);
-
-  expect(model.groups[0].title).toBe('The bug');
-  expect(model.groups[0].files.map((file) => file.path)).toEqual(['src/App.tsx', 'src/test.ts']);
-  expect(model.files.map((file) => file.path)).toEqual([
-    'src/App.tsx',
-    'src/test.ts',
-    'pnpm-lock.yaml',
-    'mirror.ts',
-  ]);
-});
-
-test('buildCommitModel carries per-file change-type tags and notes onto the rows', () => {
-  const base = walkthrough();
-  const tagged: Record<string, Partial<NarrativeWalkthrough['segments'][number]>> = {
-    lock: { changeType: 'lockfile' },
-    s1: { changeType: 'fix', commitNote: 'reorder the hunks' },
-    s2: { changeType: 'test', commitNote: 'lock the regression' },
-  };
-  const wt: NarrativeWalkthrough = {
-    ...base,
-    segments: base.segments.map((segment) => ({ ...segment, ...tagged[segment.id] })),
-  };
-  const model = buildCommitModel(buildOrderView(wt, 'keys')!);
-  const byPath = new Map(model.files.map((file) => [file.path, file]));
+  const byPath = new Map(
+    buildCommitModel(buildOrderView(withTags, 'keys')!).files.map((file) => [file.path, file]),
+  );
 
   expect(byPath.get('src/App.tsx')).toMatchObject({ changeType: 'fix', note: 'reorder the hunks' });
   expect(byPath.get('src/test.ts')).toMatchObject({
@@ -269,8 +223,7 @@ test('buildCommitModel carries per-file change-type tags and notes onto the rows
   expect(byPath.get('pnpm-lock.yaml')?.changeType).toBe('lockfile');
 });
 
-test('buildCommitModel appends live tree files missing from walkthrough segments', () => {
-  const wt = walkthrough();
+test('buildCommitModel appends live tree files missing from the walkthrough', () => {
   const files: ReadonlyArray<ChangedFile> = [
     {
       fingerprint: 'a',
@@ -300,7 +253,7 @@ test('buildCommitModel appends live tree files missing from walkthrough segments
     },
   ];
 
-  const model = buildCommitModel(buildOrderView(wt, 'keys')!, files);
+  const model = buildCommitModel(buildOrderView(walkthrough(), 'keys')!, files);
   const missing = model.files.find((file) => file.path === 'src/missed.ts');
 
   expect(missing).toMatchObject({
@@ -384,13 +337,12 @@ test('resolveSegmentFile prefers the anchor section then the first visible one',
       status: 'modified',
     },
   ];
-  const wt = walkthrough();
-  const segment = wt.segments.find((s) => s.id === 's1')!;
+  const segments = collectWalkthroughSegments(walkthrough());
+  const segment = segments.find((s) => s.id === 's1')!;
 
   const resolved = resolveSegmentFile(segment, files, false);
   expect(resolved?.section.id).toBe('src/App.tsx:staged');
 
-  // A segment whose path isn't in the diff resolves to null.
-  const missing = wt.segments.find((s) => s.id === 's2')!;
+  const missing = segments.find((s) => s.id === 's2')!;
   expect(resolveSegmentFile(missing, files, false)).toBeNull();
 });

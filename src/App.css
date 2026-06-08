@@ -122,6 +122,12 @@
     box-sizing: border-box;
   }
 
+  svg,
+  .icon,
+  [class*='-icon'] {
+    flex-shrink: 0;
+  }
+
   html,
   body,
   #root {

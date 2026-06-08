@@ -1,116 +1,59 @@
 # Narrative walkthrough — authoring guide
 
-This is Codiff's guidance for authoring a **narrative walkthrough**: a story-shaped
-review of a change with ordered stops grouped into chapters, each pinned to a specific
-slice of the diff, with your narration and the prior conversation attached so Codiff can
-answer follow-up questions.
+This is Codiff's guidance for authoring a **narrative walkthrough**: a compact review path
+through a change, with ordered chapters, stops, and direct anchors into the live diff.
+The diff content itself is not embedded. Codiff computes the diff from the repository,
+repairs anchors on load, and renders the real current diff.
 
-You — the agent — author a JSON document conforming to the schema printed at the end of
-this guide. Write it to a **temporary file outside the repository** (e.g. a unique path in
-the system temp directory) so it never clutters the working tree; pass that path to Codiff
-with `--walkthrough-file`. Set the document's `"$schema"` to
+Write the JSON document to a **temporary file outside the repository** and pass it to
+Codiff with `--walkthrough-file`. Set `"$schema"` to
 `https://raw.githubusercontent.com/nkzw-tech/codiff/main/src/walkthrough/narrative-walkthrough.schema.json`
 for editor validation.
 
-Default to the **staged** diff (`git diff --staged`). If the user named a target, use that —
-Codiff accepts a commit (`HEAD`, a SHA), a branch, a pull request (`#123` or a GitHub URL), a
-**ref range** (`base...head` for the merge-base diff, or `base..head` for the direct diff, e.g.
-`main...my-feature` to review a branch like a PR), or a repository path. If nothing is staged,
-fall back to the working tree (`git diff`) and say so. Anchor the document's `segments` against
-whichever diff you choose; for a range, that is the set of files in `git diff base...head`.
+Default to the **staged** diff (`git diff --staged`). If the user named a target, use that:
+a commit, branch, pull request, ref range, or repository path. If nothing is staged, fall back
+to the working tree (`git diff`) and say so. Anchor every `chapters[].stops[].anchors[]` and
+`support[].files[]` item against whichever diff you choose.
 
-## The shape, and why it's shaped this way
+## Shape
 
-The document separates **segments** (order-independent slices of the diff) from **orders**
-(reading views over them). The same segment can lead one order and sit in another order's
-"rest". This is what lets one changeset present as both _key-changes-first_ and
-_results-first_ without duplicating data.
-
-- **`segments[]`** — the order-independent atoms. Each is one addressable slice of the diff:
-  - `id` — stable within the document, e.g. `"s1"`.
+- **`chapters[]`** — 2-6 compact sections in the review path. A chapter is a conceptual group,
+  not a file. Keep `title` to 1-2 short words and at most 16 characters, e.g. `"UI"`, `"CLI"`,
+  `"Tests"`, `"Docs"`, `"Runtime"`, `"Cleanup"`.
+- **`chapters[].stops[]`** — the main review path. Use 3-6 stops for small changes, 5-9 for
+  medium changes, and 7-12 for large changes. Never exceed 14. A stop should represent one
+  review idea and can cover up to 8 files via direct anchors.
+- **`anchors[]` / `support[].files[]`** — direct slices of the live diff:
+  - `id` — stable within the document, e.g. `"a1"`.
   - `path`, `oldPath?`, `status` (`added` | `deleted` | `modified` | `renamed` | `untracked`).
-  - `granularity` — `line` | `hunk` | `file`. Choose per stop: pull out a single `line` for a
-    one-line bug, a `hunk` for a focused change, a whole `file` for a new test that reads as a
-    spec.
-  - `added`, `deleted` — line counts for the slice.
-  - `anchor` — where it points into the live diff: `display` (e.g. `"src/App.tsx:311"`),
-    optional `sectionId` (`<path>:staged` for staged diffs, `<path>:unstaged` for working-tree
-    edits), `sectionKind`, `side` (`additions` | `deletions` | `both`), and `startLine`/`endLine`
-    for `line`/`hunk` granularity (omit for `file`). Codiff repairs anchors against the live diff,
-    so a missing or slightly-off `sectionId` is fine — it's pinned to a real section on load.
-  - `title?`, `summary?` — default framing; an order's stop may override the title.
-  - `comments?` — review comments to seed, anchored by `side` + `lineNumber` (+ optional range).
-  - `changeType?`, `commitNote?` — only used when the document is committable (see `commit` below).
-    `changeType` tags the file in the commit composer (`fix` | `feature` | `refactor` | `test` |
-    `generated` | `lockfile` | `snapshot` | `i18n` | `docs`); `commitNote` is the one-line note the
-    generated commit body uses for the file (falls back to `summary`).
-  - For broad walkthroughs, prefer **exactly one segment per changed file** in digest order, using
-    ids like `s1`, `s2`, ... . Split a file into multiple segments only when it truly contains
-    separate review ideas.
+  - `granularity` — `line` | `hunk` | `file`.
+  - `added`, `deleted` — line counts for this slice.
+  - `anchor` — `display`, optional `sectionId`, `sectionKind`, `side`, `startLine`, `endLine`.
+    Codiff repairs missing or stale section ids against the live diff.
+  - `title?`, `summary?` — short labels for the file or slice.
+  - `comments?` — optional seeded review comments anchored by side and line.
+  - `changeType?`, `commitNote?` — optional commit composer metadata.
+- **`support[]`** — changed files that should stay off the main path. Use it for generated
+  files, lockfiles, snapshots, broad CSS churn, deleted legacy files, and repeated mechanical
+  edits unless they are essential to review.
+- **`commit?`** — for working-tree walkthroughs, include `title` and `body` when there is enough
+  signal for a useful commit message. Omit it for commits, branches, and pull requests.
+- **`context?`** — compact originating conversation context, if available, for follow-up Q&A.
 
-- **`orders[]`** — one or more reading views over the segments. Each has:
-  - `id` (e.g. `"keys"`, `"results"`), `label`, `tagline`.
-  - `phases[]` — named story chapters, each with an `icon` (`bug` | `wrench` | `path` |
-    `flask` | `beaker` | `doc` | `gear`) and a `blurb`. Use **2-6 phases** total; a phase is
-    a conceptual grouping, not a file. Keep `title` short because it renders in the compact top
-    bar: **1-2 short words, at most 16 characters**, e.g. `"UI"`, `"CLI"`, `"Tests"`, `"Docs"`,
-    `"Runtime"`, `"Cleanup"`.
-  - `sequence[]` — the ordered main-path stops. Each is `{ segmentId, phaseId, importance,
-prose, title?, relatedSegmentIds? }`. Use **6-12 stops for large changes**, fewer for small
-    changes, and never more than 14. A stop should usually represent a review idea or contract,
-    not "one file". Use `relatedSegmentIds` to attach up to 8 sibling files/hunks that should be
-    read under the same narration.
-  - `rest[]` — files changed alongside the work but kept off the narrative path, each
-    `{ segmentId, reason, note? }`. Group by `reason` (e.g. `Generated`, `Lockfile`, `Snapshot`,
-    `Mechanical`).
-  - `restLabel`, `restBlurb` — how "the rest" is presented.
+## Rules
 
-- **`defaultOrder`** — fallback order id if the user's persisted View → Walkthrough preference is
-  unavailable for this document. Prefer `keys`; Codiff's default walkthrough setting opens key
-  changes first, while users can switch to `results` from the View menu.
+- Every changed file should appear exactly once in either a stop anchor or support. Codiff adds
+  any omitted live-diff file to `support`, but a clean document reads better.
+- Order stops by review leverage, not by file path.
+- Do not make one stop per file for broad changes. Group files that implement the same idea in
+  one stop.
+- Keep `summary` to one concrete sentence. Keep `body` short and specific. Do not use markdown
+  headings.
+- Avoid generic filler, broad assurance language, and meta-explanatory labels.
+- Do not invent bugs, risks, tests, or validation. Describe what the diff and conversation
+  actually support.
+- Put review findings in `comments[]`, not in the stop body.
 
-- **`context`** — a compact summary of the originating conversation (objective, decisions,
-  risks, validation, a few key messages), so Codiff can answer questions without you. Use the
-  `WalkthroughContext` shape (`version: 1`, `source: { type: "claude-session" | "codex-session", generatedAt }`).
-
-- **`commit?`** — for a working-tree walkthrough, Codiff always adds a commit composer as the
-  terminal stop. Include `commit.title` and `commit.body` by default when the digest has enough
-  signal for a useful commit message, and only when the diff is a staging set the reviewer can
-  commit (i.e. `source.type` is `working-tree`). `title` is the suggested first line; do not repeat
-  it as the first line of `body`. `body` is **a few paragraphs of prose** describing the change as a
-  whole (not a per-file list), shown editable by default. Write the `body` at the level a good
-  commit message would: what changed and why, the shape of the approach, and any caveat worth
-  landing in history. The file rows still reuse the
-  segments' phases (file groups), `changeType` tags, and `commitNote`s; if the reviewer drops files
-  from the staging set, an "Update the message" action asks the agent to rewrite the `body` for
-  exactly the selected files. Omit `commit` for commits, branches, and pull requests — you can't
-  commit those.
-
-## How to think about it
-
-- Order stops by **review leverage and story**, not by file path. It is good for the arc to
-  cross files and return to an earlier one (the bug, the fix, the refactor, the proof).
-- Keep the walkthrough compact. Do **not** make one stop or one chapter per changed file. Pick
-  the few stops a reviewer must understand first, then put related secondary files in `rest[]`.
-  When many files share the same mechanical or support role, group them together in `rest[]`
-  instead of promoting each one to the main path.
-- When several files implement the same idea, make one stop for the lead segment and attach the
-  siblings with `relatedSegmentIds` instead of creating adjacent single-file stops.
-- Treat `sequence[]`, `relatedSegmentIds`, and `rest[]` as a partition of the changed files: after
-  the main path and supporting groups are read, every segment should be referenced exactly once.
-- Write `prose` as the agent's voice explaining _why this matters now_. It may use inline
-  markdown / code. Keep review comments separate (`comments[]`), not baked into prose.
-- Use `importance: "critical"` sparingly — only the genuine root cause or the defining test.
-- Push generated files, lockfiles, and snapshots into each order's `rest[]` with a `reason`. In
-  a results-first order you may instead promote a signal-bearing one (a snapshot, a widened
-  contract) to a lead stop.
-
-- Provide **two orders** when both make sense (`keys` and `results`); one is fine for small
-  changes. Do not invent bugs or produce review findings — describe what changed and why.
-- Every `segmentId` referenced by a `sequence` or `rest` entry must exist in `segments[]`, and
-  every segment `path` should be a file in the diff. Codiff drops dangling references on load,
-  but a clean document renders best.
-
-## The schema
+## Schema
 
 The document must conform to the following JSON schema:

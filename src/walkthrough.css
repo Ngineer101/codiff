@@ -36,19 +36,18 @@
 .wt-toc-chapter-head {
   align-items: center;
   display: grid;
-  gap: 8px;
+  gap: 4px;
   grid-template-columns: 18px minmax(0, 1fr);
-  padding: 0 4px 8px;
+  padding: 0 0 4px 2px;
 }
 .wt-toc-chapter-icon {
   color: var(--muted);
   display: inline-flex;
-  font-size: 15px;
+  font-size: 16px;
 }
-.wt-toc-chapter-icon svg,
-.wt-arc-chapter-label svg,
-.wt-upnext-action > svg {
-  flex-shrink: 0;
+.wt-toc-chapter-icon svg {
+  height: 16px;
+  width: 16px;
 }
 .wt-toc-chapter-title {
   color: var(--text);
@@ -80,8 +79,8 @@
   position: relative;
 }
 .wt-toc-rail::before {
-  background: var(--file-border);
-  bottom: -2px;
+  background: color-mix(in srgb, var(--text) 9%, var(--code-bg));
+  bottom: 0;
   content: '';
   left: 50%;
   position: absolute;

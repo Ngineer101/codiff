@@ -746,6 +746,18 @@ const focusOrCreateWindow = (
         );
 
   if (matchingWindow) {
+    if (launchOptions.walkthrough || launchOptions.walkthroughFile) {
+      windowRepositories.set(matchingWebContentsId, repositoryPath);
+      windowLaunchOptions.set(matchingWebContentsId, launchOptions);
+      windowInitialRepositoryStates.set(
+        matchingWebContentsId,
+        readRepositoryState(repositoryPath, launchOptions.source),
+      );
+      if (identity) {
+        windowIdentities.set(matchingWebContentsId, identity);
+      }
+      matchingWindow.reload();
+    }
     focusWindow(matchingWindow);
     return matchingWindow;
   }

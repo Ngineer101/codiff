@@ -5,10 +5,10 @@ import type {
   WalkthroughChangeType,
   WalkthroughIcon,
   WalkthroughOrder,
+  WalkthroughOrderStop,
   WalkthroughPhase,
   WalkthroughRestItem,
   WalkthroughSegment,
-  WalkthroughStop,
 } from '../types.ts';
 import { getFirstVisibleSection } from './diff.ts';
 
@@ -18,10 +18,11 @@ export type NarrativeLineCount = {
 };
 
 /** A stop resolved to its segment and given a global position in the order. */
-export type WalkthroughStopView = WalkthroughStop & {
+export type WalkthroughStopView = WalkthroughOrderStop & {
   index: number;
   relatedSegments: ReadonlyArray<WalkthroughSegment>;
   segment: WalkthroughSegment;
+  segmentId: string;
 };
 
 /** A phase with the stops that belong to it, in order. */
@@ -83,6 +84,13 @@ export const getStopLineCount = (stop: WalkthroughStopView): NarrativeLineCount 
 export const isWalkthroughCommittable = (walkthrough: NarrativeWalkthrough): boolean =>
   walkthrough.source.type === 'working-tree';
 
+export const collectWalkthroughSegments = (
+  walkthrough: NarrativeWalkthrough,
+): ReadonlyArray<WalkthroughSegment> => [
+  ...walkthrough.chapters.flatMap((chapter) => chapter.stops.flatMap((stop) => stop.anchors)),
+  ...walkthrough.support.flatMap((group) => group.files),
+];
+
 const groupRestByReason = (
   rest: ReadonlyArray<WalkthroughRestView>,
 ): ReadonlyArray<WalkthroughRestReason> => {
@@ -100,19 +108,64 @@ const groupRestByReason = (
   return groups;
 };
 
-/** Resolve the order to render: the requested id, the default, or the first. */
+/** Build the UI adapter order from the direct v3 document shape. */
 export const resolveOrder = (
   walkthrough: NarrativeWalkthrough,
-  orderId?: string | null,
+  _orderId?: string | null,
 ): WalkthroughOrder | null => {
-  if (walkthrough.orders.length === 0) {
+  const phases: Array<WalkthroughPhase> = [];
+  const sequence: Array<WalkthroughOrderStop> = [];
+  const rest: Array<WalkthroughRestItem> = [];
+
+  for (const [chapterIndex, chapter] of walkthrough.chapters.entries()) {
+    phases.push({
+      blurb: chapter.blurb,
+      icon: chapter.icon,
+      id: chapter.id,
+      n: chapterIndex + 1,
+      title: chapter.title,
+    });
+    for (const stop of chapter.stops) {
+      const segmentIds = stop.anchors.map((segment) => segment.id);
+      if (segmentIds.length === 0) {
+        continue;
+      }
+      sequence.push({
+        body: stop.body,
+        id: stop.id,
+        importance: stop.importance,
+        phaseId: chapter.id,
+        segmentIds,
+        summary: stop.summary,
+        title: stop.title,
+      });
+    }
+  }
+
+  for (const group of walkthrough.support) {
+    for (const file of group.files) {
+      rest.push({
+        note: group.note ?? file.summary,
+        reason: group.title,
+        segmentId: file.id,
+      });
+    }
+  }
+
+  if (sequence.length === 0 && rest.length === 0) {
     return null;
   }
-  return (
-    walkthrough.orders.find((order) => order.id === orderId) ??
-    walkthrough.orders.find((order) => order.id === walkthrough.defaultOrder) ??
-    walkthrough.orders[0]
-  );
+
+  return {
+    id: 'walkthrough',
+    label: 'Walkthrough',
+    phases,
+    rest,
+    restBlurb: 'Changed alongside the main review path.',
+    restLabel: 'Support',
+    sequence,
+    tagline: '',
+  };
 };
 
 /**
@@ -130,20 +183,29 @@ export const buildOrderView = (
     return null;
   }
 
-  const segmentsById = new Map(walkthrough.segments.map((segment) => [segment.id, segment]));
+  const segmentsById = new Map(
+    collectWalkthroughSegments(walkthrough).map((segment) => [segment.id, segment]),
+  );
 
   const sequence: Array<WalkthroughStopView> = [];
   for (const stop of order.sequence) {
-    const segment = segmentsById.get(stop.segmentId);
+    const [segmentId, ...relatedSegmentIds] = stop.segmentIds;
+    const segment = segmentsById.get(segmentId);
     if (segment) {
       const relatedSegments: Array<WalkthroughSegment> = [];
-      for (const segmentId of stop.relatedSegmentIds ?? []) {
-        const relatedSegment = segmentsById.get(segmentId);
+      for (const relatedSegmentId of relatedSegmentIds) {
+        const relatedSegment = segmentsById.get(relatedSegmentId);
         if (relatedSegment) {
           relatedSegments.push(relatedSegment);
         }
       }
-      sequence.push({ ...stop, index: sequence.length, relatedSegments, segment });
+      sequence.push({
+        ...stop,
+        index: sequence.length,
+        relatedSegments,
+        segment,
+        segmentId,
+      });
     }
   }
 
@@ -447,7 +509,7 @@ export const granularityLabel: Record<WalkthroughSegment['granularity'], string>
   line: 'line',
 };
 
-export const importanceLabel: Record<WalkthroughStop['importance'], string> = {
+export const importanceLabel: Record<WalkthroughOrderStop['importance'], string> = {
   context: 'Context',
   critical: 'Critical',
   normal: 'Review',

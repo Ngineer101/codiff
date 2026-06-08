@@ -2,7 +2,7 @@ import claudeIconUrl from '../../../assets/claude.svg';
 import codexIconUrl from '../../../assets/codex.svg';
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import { importanceLabel } from '../../../lib/narrative-walkthrough.ts';
-import type { WalkthroughIcon, WalkthroughStop } from '../../../types.ts';
+import type { WalkthroughIcon, WalkthroughOrderStop } from '../../../types.ts';
 import { phaseIcons } from './icons.tsx';
 
 export function AgentLogo({ agentId }: { agentId: 'codex' | 'claude' }) {
@@ -14,7 +14,7 @@ export function PhaseIcon({ icon, size = 13 }: { icon: WalkthroughIcon; size?: n
   return <Icon size={size} />;
 }
 
-export function ImportancePill({ importance }: { importance: WalkthroughStop['importance'] }) {
+export function ImportancePill({ importance }: { importance: WalkthroughOrderStop['importance'] }) {
   return <span className={`wt-importance ${importance}`}>{importanceLabel[importance]}</span>;
 }
 

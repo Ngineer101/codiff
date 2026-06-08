@@ -52,6 +52,55 @@ const MAX_LARGE_SECTION_PATCH_CHARS = 700;
 const MAX_WALKTHROUGH_PHASES = 6;
 const MAX_WALKTHROUGH_STOPS = 14;
 
+const anchorTargetSchema = {
+  additionalProperties: false,
+  properties: {
+    added: { type: 'number' },
+    anchor: {
+      additionalProperties: false,
+      properties: {
+        display: { type: 'string' },
+        endLine: { type: 'number' },
+        sectionId: { type: 'string' },
+        sectionKind: { enum: [...SECTION_KINDS], type: 'string' },
+        side: { enum: [...SIDES], type: 'string' },
+        startLine: { type: 'number' },
+      },
+      required: ['display'],
+      type: 'object',
+    },
+    changeType: { enum: [...CHANGE_TYPES], type: 'string' },
+    comments: {
+      items: {
+        additionalProperties: false,
+        properties: {
+          author: { type: 'string' },
+          body: { type: 'string' },
+          id: { type: 'string' },
+          lineNumber: { type: 'number' },
+          side: { enum: [...COMMENT_SIDES], type: 'string' },
+          startLineNumber: { type: 'number' },
+          startSide: { enum: [...COMMENT_SIDES], type: 'string' },
+        },
+        required: ['id', 'body', 'side', 'lineNumber'],
+        type: 'object',
+      },
+      type: 'array',
+    },
+    commitNote: { type: 'string' },
+    deleted: { type: 'number' },
+    granularity: { enum: [...GRANULARITIES], type: 'string' },
+    id: { type: 'string' },
+    oldPath: { type: 'string' },
+    path: { type: 'string' },
+    status: { enum: [...STATUSES], type: 'string' },
+    summary: { type: 'string' },
+    title: { type: 'string' },
+  },
+  required: ['id', 'path', 'status', 'granularity', 'anchor', 'added', 'deleted'],
+  type: 'object',
+};
+
 // The narrative walkthrough JSON schema, kept in sync with src/walkthrough/
 // narrative-walkthrough.schema.json. Authoring agents constrain output to it; the
 // renderer trusts only the normalized result, not the raw schema-valid input.
@@ -59,6 +108,42 @@ const narrativeWalkthroughSchema = {
   additionalProperties: false,
   properties: {
     agent: { enum: ['codex', 'claude'], type: 'string' },
+    chapters: {
+      items: {
+        additionalProperties: false,
+        properties: {
+          blurb: { type: 'string' },
+          icon: { enum: [...ICONS], type: 'string' },
+          id: { type: 'string' },
+          stops: {
+            items: {
+              additionalProperties: false,
+              properties: {
+                anchors: {
+                  items: anchorTargetSchema,
+                  maxItems: 8,
+                  type: 'array',
+                },
+                body: { type: 'string' },
+                id: { type: 'string' },
+                importance: { enum: [...IMPORTANCES], type: 'string' },
+                summary: { type: 'string' },
+                title: { type: 'string' },
+              },
+              required: ['id', 'title', 'summary', 'body', 'importance', 'anchors'],
+              type: 'object',
+            },
+            maxItems: MAX_WALKTHROUGH_STOPS,
+            type: 'array',
+          },
+          title: { maxLength: 16, type: 'string' },
+        },
+        required: ['id', 'title', 'icon', 'blurb', 'stops'],
+        type: 'object',
+      },
+      maxItems: MAX_WALKTHROUGH_PHASES,
+      type: 'array',
+    },
     commit: {
       additionalProperties: false,
       properties: {
@@ -68,85 +153,10 @@ const narrativeWalkthroughSchema = {
       type: 'object',
     },
     context: { type: 'object' },
-    defaultOrder: { type: 'string' },
     focus: { type: 'string' },
     generatedAt: { type: 'string' },
     kind: { const: 'narrative', type: 'string' },
     meta: { type: 'string' },
-    orders: {
-      items: {
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string' },
-          label: { type: 'string' },
-          phases: {
-            items: {
-              additionalProperties: false,
-              properties: {
-                blurb: { type: 'string' },
-                icon: { enum: [...ICONS], type: 'string' },
-                id: { type: 'string' },
-                n: { type: 'number' },
-                title: { maxLength: 16, type: 'string' },
-              },
-              required: ['id', 'title', 'icon', 'blurb'],
-              type: 'object',
-            },
-            maxItems: MAX_WALKTHROUGH_PHASES,
-            type: 'array',
-          },
-          rest: {
-            items: {
-              additionalProperties: false,
-              properties: {
-                note: { type: 'string' },
-                reason: { type: 'string' },
-                segmentId: { type: 'string' },
-              },
-              required: ['segmentId', 'reason'],
-              type: 'object',
-            },
-            type: 'array',
-          },
-          restBlurb: { type: 'string' },
-          restLabel: { type: 'string' },
-          sequence: {
-            items: {
-              additionalProperties: false,
-              properties: {
-                importance: { enum: [...IMPORTANCES], type: 'string' },
-                phaseId: { type: 'string' },
-                prose: { type: 'string' },
-                relatedSegmentIds: {
-                  items: { type: 'string' },
-                  maxItems: 8,
-                  type: 'array',
-                },
-                segmentId: { type: 'string' },
-                title: { type: 'string' },
-              },
-              required: ['segmentId', 'phaseId', 'importance', 'prose'],
-              type: 'object',
-            },
-            maxItems: MAX_WALKTHROUGH_STOPS,
-            type: 'array',
-          },
-          tagline: { type: 'string' },
-        },
-        required: [
-          'id',
-          'label',
-          'tagline',
-          'phases',
-          'sequence',
-          'rest',
-          'restLabel',
-          'restBlurb',
-        ],
-        type: 'object',
-      },
-      type: 'array',
-    },
     repo: {
       additionalProperties: false,
       properties: {
@@ -156,73 +166,28 @@ const narrativeWalkthroughSchema = {
       required: ['root', 'branch'],
       type: 'object',
     },
-    segments: {
+    source: { type: 'object' },
+    support: {
       items: {
         additionalProperties: false,
         properties: {
-          added: { type: 'number' },
-          anchor: {
-            additionalProperties: false,
-            properties: {
-              display: { type: 'string' },
-              endLine: { type: 'number' },
-              sectionId: { type: 'string' },
-              sectionKind: { enum: [...SECTION_KINDS], type: 'string' },
-              side: { enum: [...SIDES], type: 'string' },
-              startLine: { type: 'number' },
-            },
-            required: ['display'],
-            type: 'object',
-          },
-          changeType: { enum: [...CHANGE_TYPES], type: 'string' },
-          comments: {
-            items: {
-              additionalProperties: false,
-              properties: {
-                author: { type: 'string' },
-                body: { type: 'string' },
-                id: { type: 'string' },
-                lineNumber: { type: 'number' },
-                side: { enum: [...COMMENT_SIDES], type: 'string' },
-                startLineNumber: { type: 'number' },
-                startSide: { enum: [...COMMENT_SIDES], type: 'string' },
-              },
-              required: ['id', 'body', 'side', 'lineNumber'],
-              type: 'object',
-            },
+          id: { type: 'string' },
+          files: {
+            items: anchorTargetSchema,
             type: 'array',
           },
-          commitNote: { type: 'string' },
-          deleted: { type: 'number' },
-          granularity: { enum: [...GRANULARITIES], type: 'string' },
-          id: { type: 'string' },
-          oldPath: { type: 'string' },
-          path: { type: 'string' },
-          status: { enum: [...STATUSES], type: 'string' },
-          summary: { type: 'string' },
+          note: { type: 'string' },
           title: { type: 'string' },
         },
-        required: ['id', 'path', 'status', 'granularity', 'anchor', 'added', 'deleted'],
+        required: ['id', 'title', 'files'],
         type: 'object',
       },
       type: 'array',
     },
-    source: { type: 'object' },
     title: { type: 'string' },
-    version: { const: 2, type: 'number' },
+    version: { const: 3, type: 'number' },
   },
-  required: [
-    'version',
-    'kind',
-    'agent',
-    'title',
-    'focus',
-    'repo',
-    'source',
-    'segments',
-    'orders',
-    'defaultOrder',
-  ],
+  required: ['version', 'kind', 'agent', 'title', 'focus', 'repo', 'source', 'chapters', 'support'],
   type: 'object',
 };
 
@@ -442,18 +407,38 @@ const normalizeComment = (comment, index) => {
   return normalized;
 };
 
-/** @param {any} input @param {ReadonlyArray<ChangedFile>} files */
-const normalizeSegments = (input, files) => {
-  const byPath = indexFiles(files);
-  const segments = [];
-  const segmentIds = new Set();
+/** @param {any} segment */
+const getSegmentAnchor = (segment) => {
+  if (segment?.anchor && typeof segment.anchor === 'object') {
+    return segment.anchor;
+  }
 
-  for (const segment of Array.isArray(input?.segments) ? input.segments : []) {
+  return {
+    display: oneLine(segment?.display) || oneLine(segment?.path),
+    endLine: segment?.endLine,
+    sectionId: segment?.sectionId,
+    sectionKind: segment?.sectionKind,
+    side: segment?.side,
+    startLine: segment?.startLine,
+  };
+};
+
+/**
+ * @param {ReadonlyArray<any>} targets
+ * @param {ReadonlyArray<ChangedFile>} files
+ * @param {Set<string>} usedIds
+ * @param {Set<string>} usedPaths
+ */
+const normalizeAnchorTargets = (targets, files, usedIds, usedPaths) => {
+  const byPath = indexFiles(files);
+  const normalizedTargets = [];
+
+  for (const segment of Array.isArray(targets) ? targets : []) {
     const id = oneLine(segment?.id);
     const path = oneLine(segment?.path);
     const entry = byPath.get(path);
-    if (!id || segmentIds.has(id) || !entry) {
-      // Drop unidentified, duplicate, or stale-path segments.
+    if (!id || usedIds.has(id) || usedPaths.has(path) || !entry) {
+      // Drop unidentified, duplicate, or stale-path anchors.
       continue;
     }
 
@@ -463,7 +448,7 @@ const normalizeSegments = (input, files) => {
     /** @type {Record<string, unknown>} */
     const normalized = {
       added: coerceCount(segment?.added),
-      anchor: normalizeAnchor(segment?.anchor, entry, status, granularity),
+      anchor: normalizeAnchor(getSegmentAnchor(segment), entry, status, granularity),
       deleted: coerceCount(segment?.deleted),
       granularity,
       id,
@@ -498,136 +483,189 @@ const normalizeSegments = (input, files) => {
       normalized.comments = comments;
     }
 
-    segments.push(normalized);
-    segmentIds.add(id);
+    normalizedTargets.push(normalized);
+    usedIds.add(id);
+    usedPaths.add(path);
   }
 
-  return { segmentIds, segments };
+  return normalizedTargets;
 };
 
-/** @param {any} order @param {ReadonlySet<string>} segmentIds */
-const normalizeOrder = (order, segmentIds) => {
-  const phases = [];
-  const phaseIds = new Set();
-  let n = 0;
-  for (const phase of Array.isArray(order?.phases) ? order.phases : []) {
-    const id = oneLine(phase?.id);
-    if (!id || phaseIds.has(id)) {
+/**
+ * @param {any} input
+ * @param {ReadonlyArray<ChangedFile>} files
+ */
+const normalizeChapters = (input, files, usedIds, usedPaths) => {
+  const chapters = [];
+  const chapterIds = new Set();
+  const stopIds = new Set();
+  let stopCount = 0;
+
+  for (const [chapterIndex, chapter] of (Array.isArray(input?.chapters)
+    ? input.chapters
+    : []
+  ).entries()) {
+    if (chapters.length >= MAX_WALKTHROUGH_PHASES) {
+      break;
+    }
+    const id = oneLine(chapter?.id) || `chapter-${chapterIndex + 1}`;
+    if (chapterIds.has(id)) {
       continue;
     }
 
-    n += 1;
-    phaseIds.add(id);
-    phases.push({
-      blurb: cleanText(phase?.blurb),
-      icon: normalizeEnum(phase?.icon, ICONS, 'path'),
-      id,
-      n,
-      title: cleanText(phase?.title, 'Chapter'),
-    });
-  }
-
-  const fallbackPhaseId = phases[0]?.id;
-  const sequence = [];
-  const placedSegments = new Set();
-  for (const stop of Array.isArray(order?.sequence) ? order.sequence : []) {
-    const segmentId = oneLine(stop?.segmentId);
-    if (!segmentIds.has(segmentId) || placedSegments.has(segmentId)) {
-      continue;
-    }
-
-    const phaseId = phaseIds.has(oneLine(stop?.phaseId)) ? oneLine(stop?.phaseId) : fallbackPhaseId;
-    if (!phaseId) {
-      continue;
-    }
-
-    placedSegments.add(segmentId);
-    const relatedSegmentIds = [];
-    for (const relatedSegmentId of Array.isArray(stop?.relatedSegmentIds)
-      ? stop.relatedSegmentIds
-      : []) {
-      const id = oneLine(relatedSegmentId);
-      if (!segmentIds.has(id) || id === segmentId || placedSegments.has(id)) {
+    const stops = [];
+    for (const [stopIndex, stop] of (Array.isArray(chapter?.stops)
+      ? chapter.stops
+      : []
+    ).entries()) {
+      if (stopCount >= MAX_WALKTHROUGH_STOPS) {
+        break;
+      }
+      const stopId = oneLine(stop?.id) || `${id}-stop-${stopIndex + 1}`;
+      if (stopIds.has(stopId)) {
         continue;
       }
-      relatedSegmentIds.push(id);
-      placedSegments.add(id);
+      const anchors = normalizeAnchorTargets(stop?.anchors, files, usedIds, usedPaths);
+      if (anchors.length === 0) {
+        continue;
+      }
+      stopIds.add(stopId);
+      stopCount += 1;
+      const title =
+        cleanText(stop?.title) ||
+        cleanText(anchors[0]?.title) ||
+        cleanText(anchors[0]?.path) ||
+        `Stop ${stopCount}`;
+      const summary = cleanText(stop?.summary) || cleanText(anchors[0]?.summary) || title;
+      stops.push({
+        anchors,
+        body: cleanRich(stop?.body || stop?.prose || summary),
+        id: stopId,
+        importance: normalizeEnum(stop?.importance, IMPORTANCES, 'normal'),
+        summary,
+        title,
+      });
     }
 
-    /** @type {Record<string, unknown>} */
-    const normalized = {
-      importance: normalizeEnum(stop?.importance, IMPORTANCES, 'normal'),
-      phaseId,
-      prose: cleanRich(stop?.prose),
-      segmentId,
-    };
-    if (relatedSegmentIds.length > 0) {
-      normalized.relatedSegmentIds = relatedSegmentIds;
-    }
-    const title = cleanText(stop?.title);
-    if (title) {
-      normalized.title = title;
-    }
-    sequence.push(normalized);
-  }
-
-  if (sequence.length === 0) {
-    return null;
-  }
-
-  const rest = [];
-  const restSegments = new Set();
-  for (const item of Array.isArray(order?.rest) ? order.rest : []) {
-    const segmentId = oneLine(item?.segmentId);
-    if (
-      !segmentIds.has(segmentId) ||
-      placedSegments.has(segmentId) ||
-      restSegments.has(segmentId)
-    ) {
+    if (stops.length === 0) {
       continue;
     }
 
-    restSegments.add(segmentId);
-    /** @type {Record<string, unknown>} */
-    const normalized = {
-      reason: cleanText(item?.reason, 'Other'),
-      segmentId,
-    };
-    const note = cleanText(item?.note);
-    if (note) {
-      normalized.note = note;
-    }
-    rest.push(normalized);
-  }
-
-  for (const segmentId of segmentIds) {
-    if (placedSegments.has(segmentId) || restSegments.has(segmentId)) {
-      continue;
-    }
-
-    restSegments.add(segmentId);
-    rest.push({
-      reason: 'Other changes',
-      segmentId,
+    chapterIds.add(id);
+    chapters.push({
+      blurb: cleanText(chapter?.blurb),
+      icon: normalizeEnum(chapter?.icon, ICONS, 'path'),
+      id,
+      stops,
+      title: cleanText(chapter?.title, 'Review'),
     });
   }
 
-  // Phases with no surviving stops are noise; keep only referenced ones.
-  const usedPhaseIds = new Set(sequence.map((stop) => stop.phaseId));
-  const usedPhases = phases
-    .filter((phase) => usedPhaseIds.has(phase.id))
-    .map((phase, index) => ({ ...phase, n: index + 1 }));
+  return chapters;
+};
 
-  return {
-    id: oneLine(order?.id) || 'order',
-    label: cleanText(order?.label, 'Walkthrough'),
-    phases: usedPhases,
-    rest,
-    restBlurb: cleanText(order?.restBlurb, 'Changed alongside the work but off the path.'),
-    restLabel: cleanText(order?.restLabel, 'Support'),
-    sequence,
-    tagline: cleanText(order?.tagline),
-  };
+/**
+ * @param {any} input
+ * @param {ReadonlyArray<ChangedFile>} files
+ * @param {Set<string>} usedIds
+ * @param {Set<string>} usedPaths
+ */
+const normalizeSupport = (input, files, usedIds, usedPaths) => {
+  const groups = [];
+  const groupIds = new Set();
+
+  for (const [groupIndex, group] of (Array.isArray(input?.support)
+    ? input.support
+    : []
+  ).entries()) {
+    const id = oneLine(group?.id) || `support-${groupIndex + 1}`;
+    if (groupIds.has(id)) {
+      continue;
+    }
+    const filesForGroup = normalizeAnchorTargets(group?.files, files, usedIds, usedPaths);
+    if (filesForGroup.length === 0) {
+      continue;
+    }
+    groupIds.add(id);
+    groups.push({
+      files: filesForGroup,
+      id,
+      note: cleanText(group?.note),
+      title: cleanText(group?.title, 'Other changes'),
+    });
+  }
+
+  return groups;
+};
+
+/**
+ * @param {ReadonlyArray<ChangedFile>} files
+ * @param {ReadonlyArray<any>} chapters
+ * @param {Array<any>} support
+ */
+const addMissingFilesToSupport = (files, chapters, support) => {
+  const coveredPaths = new Set();
+  for (const chapter of chapters) {
+    for (const stop of chapter.stops || []) {
+      for (const target of stop.anchors || []) {
+        coveredPaths.add(target.path);
+      }
+    }
+  }
+  for (const group of support) {
+    for (const target of group.files || []) {
+      coveredPaths.add(target.path);
+    }
+  }
+
+  const missing = [];
+  for (const file of files) {
+    if (coveredPaths.has(file.path)) {
+      continue;
+    }
+    const section = file.sections?.[0];
+    const totals = (file.sections || []).reduce(
+      (sum, section) => {
+        const count = countPatchLines(section.patch || '');
+        return { added: sum.added + count.added, deleted: sum.deleted + count.deleted };
+      },
+      { added: 0, deleted: 0 },
+    );
+    missing.push({
+      added: totals.added,
+      anchor: normalizeAnchor(
+        { display: file.path, sectionId: section?.id, sectionKind: section?.kind },
+        {
+          firstSection: section,
+          oldPath: file.oldPath,
+          sectionById: new Map((file.sections || []).map((section) => [section.id, section])),
+          sections: (file.sections || []).map((section) => ({
+            id: section.id,
+            kind: section.kind,
+          })),
+          status: file.status,
+        },
+        file.status,
+        'file',
+      ),
+      deleted: totals.deleted,
+      granularity: 'file',
+      id: `__file:${file.path}`,
+      oldPath: file.oldPath,
+      path: file.path,
+      status: normalizeEnum(file.status, STATUSES, 'modified'),
+      summary: 'Not included in the generated walkthrough.',
+    });
+  }
+
+  if (missing.length > 0) {
+    support.push({
+      files: missing,
+      id: '__missing',
+      note: 'Not included in the generated walkthrough.',
+      title: 'Other changes',
+    });
+  }
 };
 
 /**
@@ -641,30 +679,15 @@ const normalizeNarrativeWalkthrough = (input, files) => {
     throw new Error('Narrative walkthrough is not an object.');
   }
 
-  const { segmentIds, segments } = normalizeSegments(input, files);
-  if (segments.length === 0) {
-    throw new Error('Narrative walkthrough has no segments that match the current diff.');
+  const usedIds = new Set();
+  const usedPaths = new Set();
+  const chapters = normalizeChapters(input, files, usedIds, usedPaths);
+  const support = normalizeSupport(input, files, usedIds, usedPaths);
+  addMissingFilesToSupport(files, chapters, support);
+
+  if (chapters.length === 0 && support.length === 0) {
+    throw new Error('Narrative walkthrough has no anchors that match the current diff.');
   }
-
-  const orders = [];
-  const orderIds = new Set();
-  for (const order of Array.isArray(input.orders) ? input.orders : []) {
-    const normalized = normalizeOrder(order, segmentIds);
-    if (!normalized || orderIds.has(normalized.id)) {
-      continue;
-    }
-
-    orderIds.add(normalized.id);
-    orders.push(normalized);
-  }
-
-  if (orders.length === 0) {
-    throw new Error('Narrative walkthrough has no orders with resolvable stops.');
-  }
-
-  const defaultOrder = orderIds.has(oneLine(input.defaultOrder))
-    ? oneLine(input.defaultOrder)
-    : orders[0].id;
 
   const branch =
     typeof input.repo?.branch === 'string' || input.repo?.branch === null
@@ -674,20 +697,19 @@ const normalizeNarrativeWalkthrough = (input, files) => {
   /** @type {Record<string, unknown>} */
   const result = {
     agent: normalizeEnum(input.agent, AGENTS, 'claude'),
-    defaultOrder,
     focus: cleanText(input.focus, 'Walk through the change.'),
     generatedAt: oneLine(input.generatedAt),
+    chapters,
     kind: 'narrative',
-    orders,
     repo: {
       branch,
       root: oneLine(input.repo?.root),
     },
-    segments,
     source:
       input.source && typeof input.source === 'object' ? input.source : { type: 'working-tree' },
+    support,
     title: cleanText(input.title, 'Walkthrough'),
-    version: 2,
+    version: 3,
   };
 
   const meta = cleanText(input.meta);
@@ -838,17 +860,18 @@ const buildWalkthroughSizingGuidance = (state) => {
   const fileCount = state.files.length;
   const targetStops = fileCount <= 6 ? '3-6' : fileCount <= 16 ? '5-9' : '7-12';
   return `Coverage contract:
-- The digest has ${fileCount} files. Create exactly one segment for every file in digest.files, using the file's path/status and first section id/kind for the anchor.
-- Use segment ids s1, s2, ... in digest.files order. Do not skip files. Do not invent files.
-- Use file granularity for broad file-level changes. Use hunk/line only for a truly pinpointed change.
+- The digest has ${fileCount} files. Every file must appear exactly once in either a stop anchor or support.files.
+- Create anchor ids a1, a2, ... in digest.files order. Do not skip files. Do not invent files.
+- Use file granularity for broad file-level changes. Use hunk or line only for a truly pinpointed change.
 - Do not add comments unless there is an explicit review-comment need.
 
 Grouping contract:
 - Target ${targetStops} main-path stops and at most ${MAX_WALKTHROUGH_STOPS}.
-- Use 2-${MAX_WALKTHROUGH_PHASES} conceptual phases. Phase titles render in a compact top bar: 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
-- Do not create one stop per file. Each stop should name one review idea and use relatedSegmentIds for up to 8 files that belong to that idea.
-- Put files not used in sequence/relatedSegmentIds into rest[] with shared reasons. Sequence + relatedSegmentIds + rest should reference every segment exactly once.
-- Prefer fewer stronger stops over exhaustive prose. Deleted legacy files, docs, tests, CSS, generated files, and repeated patterns usually belong in rest[] unless essential to the story.
+- Use 2-${MAX_WALKTHROUGH_PHASES} chapters. Chapter titles render in a compact top bar: 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
+- Do not create one stop per file. Each stop should name one review idea and can include up to 8 anchors for files that belong to that idea.
+- Put generated files, lockfiles, snapshots, broad CSS churn, deleted legacy files, and repeated mechanical edits into support[] unless they are essential to the main review path.
+- Prefer fewer stronger stops over exhaustive prose.
+- Keep stop.summary to one concrete sentence. Keep stop.body short and specific. Do not use generic filler, broad assurance language, meta-explanatory labels, or markdown headings.
 - For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
 `;
 };

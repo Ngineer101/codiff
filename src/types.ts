@@ -197,11 +197,10 @@ export type TerminalHelperStatus = {
 };
 
 /**
- * Narrative Walkthrough. It separates order-independent *segments* (addressable
- * slices of the live diff) from one or more *orders* (reading views over those
- * segments, e.g. key-changes-first vs results-first). The diff content itself is
- * never embedded: a segment anchors into the live diff codiff computes from the
- * repository.
+ * Narrative Walkthrough. The authored shape is deliberately direct: chapters
+ * contain stops, and stops point at one or more slices of the live diff. The
+ * diff content itself is never embedded: an anchor target points into the live
+ * diff Codiff computes from the repository.
  */
 export type WalkthroughIcon = 'bug' | 'wrench' | 'path' | 'flask' | 'beaker' | 'doc' | 'gear';
 
@@ -246,8 +245,8 @@ export type WalkthroughChangeType =
   | 'i18n'
   | 'docs';
 
-/** Order-independent atom: one addressable slice of the diff with its line counts. */
-export type WalkthroughSegment = {
+/** One addressable slice of the live diff with its line counts. */
+export type WalkthroughAnchorTarget = {
   added: number;
   anchor: WalkthroughAnchor;
   /** Change-type tag for the commit composer's file row. */
@@ -268,7 +267,38 @@ export type WalkthroughSegment = {
   title?: string;
 };
 
-/** A named chapter/phase within an order. */
+export type WalkthroughSegment = WalkthroughAnchorTarget;
+
+/** A named chapter in the walkthrough. */
+export type WalkthroughChapter = {
+  blurb: string;
+  icon: WalkthroughIcon;
+  id: string;
+  stops: ReadonlyArray<WalkthroughStop>;
+  title: string;
+};
+
+/** One stop in the walkthrough: prose plus the live diff anchors it covers. */
+export type WalkthroughStop = {
+  anchors: ReadonlyArray<WalkthroughAnchorTarget>;
+  /** Short narration shown above the live diff. */
+  body: string;
+  id: string;
+  importance: 'critical' | 'normal' | 'context';
+  /** One-line scan label shown in the sidebar and above the diff. */
+  summary: string;
+  title: string;
+};
+
+/** A file changed alongside the work but kept off the narrative path. */
+export type WalkthroughSupportGroup = {
+  files: ReadonlyArray<WalkthroughAnchorTarget>;
+  id: string;
+  note?: string;
+  title: string;
+};
+
+/** Adapter type used by the current walkthrough UI. */
 export type WalkthroughPhase = {
   blurb: string;
   icon: WalkthroughIcon;
@@ -278,28 +308,25 @@ export type WalkthroughPhase = {
   title: string;
 };
 
-/** One stop in an order's sequence: a segment plus this order's framing of it. */
-export type WalkthroughStop = {
+/** Adapter type used by the current walkthrough UI. */
+export type WalkthroughOrderStop = {
+  body: string;
+  id: string;
   importance: 'critical' | 'normal' | 'context';
   phaseId: string;
-  /** Agent narration (markdown / inline code). */
-  prose: string;
-  /** Additional segments that render under this same conceptual stop. */
-  relatedSegmentIds?: ReadonlyArray<string>;
-  segmentId: string;
-  /** Overrides the segment's title for this order. */
-  title?: string;
+  segmentIds: ReadonlyArray<string>;
+  summary: string;
+  title: string;
 };
 
-/** A file changed alongside the work but kept off the narrative path. */
+/** Adapter type used by the current walkthrough UI. */
 export type WalkthroughRestItem = {
   note?: string;
-  /** Why it is off the path, e.g. 'Generated' | 'Lockfile' | 'Snapshot' | 'Mechanical'. */
   reason: string;
   segmentId: string;
 };
 
-/** One reading order — a view over the document's segments. */
+/** Adapter type used by the current walkthrough UI. */
 export type WalkthroughOrder = {
   id: string;
   label: string;
@@ -307,7 +334,7 @@ export type WalkthroughOrder = {
   rest: ReadonlyArray<WalkthroughRestItem>;
   restBlurb: string;
   restLabel: string;
-  sequence: ReadonlyArray<WalkthroughStop>;
+  sequence: ReadonlyArray<WalkthroughOrderStop>;
   tagline: string;
 };
 
@@ -330,6 +357,7 @@ export type WalkthroughCommit = {
 
 export type NarrativeWalkthrough = {
   agent: 'codex' | 'claude';
+  chapters: ReadonlyArray<WalkthroughChapter>;
   /**
    * When present, the diff is a committable staging set: Codiff adds a commit
    * composer at the end of the walkthrough. Stripped unless `source` is a working tree.
@@ -337,8 +365,6 @@ export type NarrativeWalkthrough = {
   commit?: WalkthroughCommit;
   /** The originating conversation, embedded for in-app Q&A. */
   context?: WalkthroughContext;
-  /** An id present in {@link orders}. */
-  defaultOrder: string;
   /** 1–2 sentence summary of the change. */
   focus: string;
   /** ISO timestamp. */
@@ -346,15 +372,14 @@ export type NarrativeWalkthrough = {
   kind: 'narrative';
   /** Display string, e.g. '6 stops · 4 chapters'. */
   meta?: string;
-  orders: ReadonlyArray<WalkthroughOrder>;
   repo: {
     branch: string | null;
     root: string;
   };
-  segments: ReadonlyArray<WalkthroughSegment>;
   source: ReviewSource;
+  support: ReadonlyArray<WalkthroughSupportGroup>;
   title: string;
-  version: 2;
+  version: 3;
 };
 
 export type NarrativeWalkthroughResult =

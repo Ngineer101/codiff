@@ -20,7 +20,7 @@ const {
     files: ReadonlyArray<{
       oldPath?: string;
       path: string;
-      sections: ReadonlyArray<{ id: string; kind: string }>;
+      sections: ReadonlyArray<{ id: string; kind: string; patch?: string }>;
       status: string;
     }>,
   ) => any;
@@ -29,97 +29,110 @@ const {
 const files = [
   {
     path: 'src/App.tsx',
-    sections: [{ id: 'src/App.tsx:staged', kind: 'staged' }],
+    sections: [{ id: 'src/App.tsx:staged', kind: 'staged', patch: '@@ -1 +1 @@\n-a\n+b\n' }],
     status: 'modified',
   },
   {
     path: 'src/__tests__/hunkNavigation.test.ts',
-    sections: [{ id: 'src/__tests__/hunkNavigation.test.ts:staged', kind: 'staged' }],
+    sections: [
+      {
+        id: 'src/__tests__/hunkNavigation.test.ts:staged',
+        kind: 'staged',
+        patch: '@@ -0,0 +1,2 @@\n+one\n+two\n',
+      },
+    ],
     status: 'added',
   },
   {
     path: 'pnpm-lock.yaml',
-    sections: [{ id: 'pnpm-lock.yaml:staged', kind: 'staged' }],
+    sections: [{ id: 'pnpm-lock.yaml:staged', kind: 'staged', patch: '@@ -1 +1 @@\n-a\n+b\n' }],
     status: 'modified',
   },
 ];
 
+const anchor = (id: string, path: string, extra: Record<string, unknown> = {}) => ({
+  added: 1,
+  anchor: { display: path, sectionId: `${path}:staged`, side: 'both' },
+  deleted: 1,
+  granularity: 'file',
+  id,
+  path,
+  status: path.endsWith('.test.ts') ? 'added' : 'modified',
+  ...extra,
+});
+
 const baseInput = () => ({
   agent: 'claude',
-  defaultOrder: 'keys',
+  chapters: [
+    {
+      blurb: 'Where it breaks.',
+      icon: 'bug',
+      id: 'bug',
+      stops: [
+        {
+          anchors: [
+            anchor('a1', 'src/App.tsx', {
+              anchor: {
+                display: 'src/App.tsx:311',
+                sectionId: 'src/App.tsx:staged',
+                side: 'both',
+                startLine: 311,
+              },
+              granularity: 'line',
+            }),
+          ],
+          body: 'The root cause line.',
+          id: 'stop-1',
+          importance: 'critical',
+          summary: 'Navigation now follows the hunk order.',
+          title: 'Hunk order',
+        },
+        {
+          anchors: [
+            anchor('a2', 'src/__tests__/hunkNavigation.test.ts', {
+              added: 14,
+              anchor: { display: 'hunkNavigation.test.ts (new)' },
+              deleted: 0,
+            }),
+          ],
+          body: 'The regression test covers the skip.',
+          id: 'stop-2',
+          importance: 'normal',
+          summary: 'The regression test covers collapsed-file movement.',
+          title: 'Regression',
+        },
+      ],
+      title: 'Bug',
+    },
+  ],
   focus: 'A one-line ordering bug let j/k skip collapsed files.',
   generatedAt: '2026-06-05T00:00:00.000Z',
   kind: 'narrative',
-  orders: [
-    {
-      id: 'keys',
-      label: 'Key changes first',
-      phases: [{ blurb: 'Where it breaks.', icon: 'bug', id: 'bug', title: 'The bug' }],
-      rest: [{ note: 'Regenerated.', reason: 'Lockfile', segmentId: 'lock' }],
-      restBlurb: 'Skim only.',
-      restLabel: 'Not in the arc',
-      sequence: [
-        {
-          importance: 'critical',
-          phaseId: 'bug',
-          prose: 'The root cause line.',
-          segmentId: 's1',
-        },
-        {
-          importance: 'normal',
-          phaseId: 'bug',
-          prose: 'The regression test.',
-          segmentId: 's6',
-        },
-      ],
-      tagline: 'Cause leads.',
-    },
-  ],
   repo: { branch: 'fix/hunk-nav', root: '/repo' },
-  segments: [
+  source: { type: 'working-tree' },
+  support: [
     {
-      added: 1,
-      anchor: {
-        display: 'src/App.tsx:311',
-        sectionId: 'src/App.tsx:staged',
-        side: 'both',
-        startLine: 311,
-      },
-      deleted: 1,
-      granularity: 'line',
-      id: 's1',
-      path: 'src/App.tsx',
-      status: 'modified',
-    },
-    {
-      added: 14,
-      anchor: { display: 'hunkNavigation.test.ts (new)' },
-      deleted: 0,
-      granularity: 'file',
-      id: 's6',
-      path: 'src/__tests__/hunkNavigation.test.ts',
-      status: 'added',
-    },
-    {
-      added: 312,
-      anchor: { display: 'pnpm-lock.yaml' },
-      deleted: 180,
-      granularity: 'file',
-      id: 'lock',
-      path: 'pnpm-lock.yaml',
-      status: 'modified',
+      files: [
+        anchor('lock', 'pnpm-lock.yaml', {
+          added: 312,
+          anchor: { display: 'pnpm-lock.yaml' },
+          deleted: 180,
+        }),
+      ],
+      id: 'lockfiles',
+      note: 'Regenerated.',
+      title: 'Lockfile',
     },
   ],
-  source: { type: 'working-tree' },
   title: 'Hunk navigation skips collapsed files',
-  version: 2,
+  version: 3,
 });
 
 test('exposes a schema requiring the core narrative fields', () => {
   expect(narrativeWalkthroughSchema.type).toBe('object');
-  expect(narrativeWalkthroughSchema.required).toContain('segments');
-  expect(narrativeWalkthroughSchema.required).toContain('orders');
-  expect(narrativeWalkthroughSchema.required).toContain('defaultOrder');
+  expect(narrativeWalkthroughSchema.required).toContain('chapters');
+  expect(narrativeWalkthroughSchema.required).toContain('support');
+  expect(narrativeWalkthroughSchema.required).not.toContain('orders');
 });
 
 test('derives an OpenAI strict-compatible response schema', () => {
@@ -132,31 +145,17 @@ test('derives an OpenAI strict-compatible response schema', () => {
   expect(narrativeWalkthroughResponseSchema.required).not.toContain('source');
   expect(narrativeWalkthroughResponseSchema.properties.commit.required).toEqual(['body', 'title']);
   expect(narrativeWalkthroughResponseSchema.properties.commit.type).toContain('null');
+  expect(narrativeWalkthroughResponseSchema.properties.chapters.maxItems).toBe(6);
   expect(
-    narrativeWalkthroughResponseSchema.properties.orders.items.properties.phases.maxItems,
-  ).toBe(6);
-  expect(
-    narrativeWalkthroughResponseSchema.properties.orders.items.properties.phases.items.properties
-      .title.maxLength,
+    narrativeWalkthroughResponseSchema.properties.chapters.items.properties.title.maxLength,
   ).toBe(16);
   expect(
-    narrativeWalkthroughResponseSchema.properties.orders.items.properties.sequence.maxItems,
+    narrativeWalkthroughResponseSchema.properties.chapters.items.properties.stops.maxItems,
   ).toBe(14);
   expect(
-    narrativeWalkthroughResponseSchema.properties.orders.items.properties.sequence.items.properties
-      .relatedSegmentIds.type,
-  ).toContain('null');
-  expect(
-    narrativeWalkthroughResponseSchema.properties.orders.items.properties.sequence.items.properties
-      .relatedSegmentIds.maxItems,
+    narrativeWalkthroughResponseSchema.properties.chapters.items.properties.stops.items.properties
+      .anchors.maxItems,
   ).toBe(8);
-  expect(
-    narrativeWalkthroughResponseSchema.properties.segments.items.properties.anchor.required,
-  ).toEqual(
-    Object.keys(
-      narrativeWalkthroughResponseSchema.properties.segments.items.properties.anchor.properties,
-    ),
-  );
 });
 
 test('prompts generated walkthroughs to stay grouped instead of file-per-stop', () => {
@@ -175,143 +174,215 @@ test('prompts generated walkthroughs to stay grouped instead of file-per-stop', 
   expect(prompt).toContain('digest has 28 files');
   expect(prompt).toContain('Target 7-12 main-path stops');
   expect(prompt).toContain('Coverage contract');
-  expect(prompt).toContain('Create exactly one segment for every file');
-  expect(prompt).toContain('Phase titles render in a compact top bar');
+  expect(prompt).toContain('Every file must appear exactly once');
+  expect(prompt).toContain('Chapter titles render in a compact top bar');
   expect(prompt).toContain('Do not create one stop per file');
-  expect(prompt).toContain('use relatedSegmentIds for up to 8 files');
-  expect(prompt).toContain('Sequence + relatedSegmentIds + rest');
+  expect(prompt).toContain('can include up to 8 anchors');
+  expect(prompt).toContain('support[]');
   expect(prompt).toContain('include commit.title and commit.body by default');
+  expect(prompt).toContain('Do not use generic filler');
 });
 
 test('normalizes a well-formed narrative walkthrough', () => {
   const result = normalizeNarrativeWalkthrough(baseInput(), files);
 
-  expect(result.version).toBe(2);
+  expect(result.version).toBe(3);
   expect(result.kind).toBe('narrative');
-  expect(result.segments).toHaveLength(3);
-  expect(result.orders).toHaveLength(1);
-  expect(result.defaultOrder).toBe('keys');
-  expect(result.orders[0].sequence.map((stop: any) => stop.segmentId)).toEqual(['s1', 's6']);
-  expect(result.orders[0].rest[0].segmentId).toBe('lock');
-  // The 'file' granularity segment drops its line range.
-  expect(result.segments[1].anchor.startLine).toBeUndefined();
+  expect(result.chapters).toHaveLength(1);
+  expect(result.chapters[0].stops.map((stop: any) => stop.id)).toEqual(['stop-1', 'stop-2']);
+  expect(result.support[0].files[0].id).toBe('lock');
+  expect(result.chapters[0].stops[1].anchors[0].anchor.startLine).toBeUndefined();
 });
 
-test('drops stops and rest items that reference unknown segments', () => {
+test('coerces flat anchor fields into the nested anchor shape', () => {
   const input = baseInput();
-  input.orders[0].sequence.push({
-    importance: 'normal',
-    phaseId: 'bug',
-    prose: 'Ghost.',
-    segmentId: 'does-not-exist',
+  input.chapters[0].stops[0].anchors[0] = {
+    ...anchor('flat', 'src/App.tsx'),
+    anchor: undefined,
+    display: 'src/App.tsx flat',
+    sectionId: 'src/App.tsx:staged',
+    sectionKind: 'staged',
+    side: 'both',
+  } as any;
+
+  const result = normalizeNarrativeWalkthrough(input, files);
+
+  expect(result.chapters[0].stops[0].anchors[0].anchor).toMatchObject({
+    display: 'src/App.tsx flat',
+    sectionId: 'src/App.tsx:staged',
+    sectionKind: 'staged',
+    side: 'both',
   });
-  input.orders[0].rest.push({ note: '', reason: 'Generated', segmentId: 'also-missing' });
+});
+
+test('drops stops and support files that reference unknown live paths', () => {
+  const input = baseInput();
+  input.chapters[0].stops.push({
+    anchors: [anchor('ghost', 'src/removed.ts')],
+    body: 'Ghost.',
+    id: 'ghost-stop',
+    importance: 'normal',
+    summary: 'Ghost.',
+    title: 'Ghost',
+  });
+  input.support.push({
+    files: [anchor('also-missing', 'src/also-removed.ts')],
+    id: 'missing',
+    title: 'Missing',
+  });
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.orders[0].sequence.map((stop: any) => stop.segmentId)).toEqual(['s1', 's6']);
-  expect(result.orders[0].rest.map((item: any) => item.segmentId)).toEqual(['lock']);
+  expect(result.chapters[0].stops.map((stop: any) => stop.id)).toEqual(['stop-1', 'stop-2']);
+  expect(result.support.map((group: any) => group.id)).toEqual(['lockfiles']);
 });
 
-test('adds unreferenced segments to rest so changed files remain visible', () => {
+test('adds omitted live files to support so changed files remain visible', () => {
   const input = baseInput();
-  input.orders[0].rest = [];
+  input.support = [];
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.orders[0].sequence.map((stop: any) => stop.segmentId)).toEqual(['s1', 's6']);
-  expect(result.orders[0].rest.map((item: any) => item.segmentId)).toEqual(['lock']);
-  expect(result.orders[0].rest[0].reason).toBe('Other changes');
+  expect(result.support.at(-1)).toMatchObject({
+    id: '__missing',
+    note: 'Not included in the generated walkthrough.',
+    title: 'Other changes',
+  });
+  expect(result.support.at(-1).files.map((file: any) => file.path)).toEqual(['pnpm-lock.yaml']);
 });
 
-test('normalizes related segments under the same stop and keeps them out of rest', () => {
+test('normalizes multiple anchors under the same stop', () => {
   const input = baseInput();
-  input.orders[0].sequence = [
+  input.chapters[0].stops = [
     {
+      anchors: [
+        input.chapters[0].stops[0].anchors[0],
+        input.chapters[0].stops[1].anchors[0],
+        anchor('missing', 'src/nope.ts'),
+      ],
+      body: 'The root cause and proof are one review idea.',
+      id: 'combined',
       importance: 'critical',
-      phaseId: 'bug',
-      prose: 'The root cause and proof are one review idea.',
-      relatedSegmentIds: ['s6', 'missing', 's1'],
-      segmentId: 's1',
+      summary: 'The root cause and proof are one review idea.',
+      title: 'Flow',
     },
   ];
-  input.orders[0].rest.push({
-    note: 'Should not duplicate.',
-    reason: 'Duplicate',
-    segmentId: 's6',
-  });
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.orders[0].sequence).toHaveLength(1);
-  expect(result.orders[0].sequence[0].relatedSegmentIds).toEqual(['s6']);
-  expect(result.orders[0].rest.map((item: any) => item.segmentId)).toEqual(['lock']);
+  expect(result.chapters[0].stops).toHaveLength(1);
+  expect(result.chapters[0].stops[0].anchors.map((item: any) => item.id)).toEqual(['a1', 'a2']);
+  expect(result.support.map((group: any) => group.id)).toEqual(['lockfiles']);
 });
 
-test('drops segments whose path is not in the current diff', () => {
+test('drops duplicate file paths after their first anchor', () => {
   const input = baseInput();
-  input.segments.push({
-    added: 1,
-    anchor: { display: 'gone.ts' },
-    deleted: 0,
-    granularity: 'file',
-    id: 'stale',
-    path: 'src/removed.ts',
-    status: 'modified',
-  });
-  input.orders[0].sequence.push({
+  input.chapters[0].stops[0].anchors.push(
+    anchor('duplicate-app', 'src/App.tsx', {
+      summary: 'A second anchor for the same file should not render twice.',
+    }),
+  );
+
+  const result = normalizeNarrativeWalkthrough(input, files);
+
+  expect(result.chapters[0].stops[0].anchors.map((item: any) => item.id)).toEqual(['a1']);
+});
+
+test('duplicate stop ids do not consume anchors from the kept coverage set', () => {
+  const input = baseInput();
+  input.chapters[0].stops.push({
+    anchors: [
+      anchor('duplicate-stop-lock', 'pnpm-lock.yaml', {
+        summary: 'A duplicate stop id should not hide this file from support.',
+      }),
+    ],
+    body: 'Duplicate stop.',
+    id: 'stop-1',
     importance: 'normal',
-    phaseId: 'bug',
-    prose: 'Points at a stale file.',
-    segmentId: 'stale',
+    summary: 'Duplicate stop.',
+    title: 'Duplicate',
   });
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.segments.find((segment: any) => segment.id === 'stale')).toBeUndefined();
-  expect(result.orders[0].sequence.map((stop: any) => stop.segmentId)).toEqual(['s1', 's6']);
+  expect(result.support.map((group: any) => group.id)).toEqual(['lockfiles']);
+  expect(result.support[0].files.map((file: any) => file.id)).toEqual(['lock']);
+});
+
+test('duplicate support group ids do not consume files from later coverage repair', () => {
+  const input = baseInput();
+  const filesWithDocs = [
+    ...files,
+    {
+      path: 'docs/walkthrough.md',
+      sections: [
+        {
+          id: 'docs/walkthrough.md:staged',
+          kind: 'staged',
+          patch: '@@ -0,0 +1 @@\n+docs\n',
+        },
+      ],
+      status: 'added',
+    },
+  ];
+  input.support = [
+    {
+      files: [
+        anchor('lock-first', 'pnpm-lock.yaml', {
+          summary: 'First support group.',
+        }),
+      ],
+      id: 'duplicate',
+      title: 'First',
+    },
+    {
+      files: [
+        anchor('docs-skipped', 'docs/walkthrough.md', {
+          summary: 'Duplicate support group.',
+          status: 'added',
+        }),
+      ],
+      id: 'duplicate',
+      title: 'Second',
+    },
+    {
+      files: [
+        anchor('docs-kept', 'docs/walkthrough.md', {
+          summary: 'Unique support group.',
+          status: 'added',
+        }),
+      ],
+      id: 'docs',
+      title: 'Docs',
+    },
+  ];
+
+  const result = normalizeNarrativeWalkthrough(input, filesWithDocs);
+
+  expect(result.support.map((group: any) => group.id)).toEqual(['duplicate', 'docs']);
+  expect(result.support[1].files.map((file: any) => file.id)).toEqual(['docs-kept']);
 });
 
 test('repairs a missing or stale anchor sectionId against the live diff', () => {
   const input = baseInput();
-  input.segments[0].anchor.sectionId = 'src/App.tsx:unstaged'; // stale — only :staged exists
-  delete (input.segments[1].anchor as any).sectionId; // missing
+  input.chapters[0].stops[0].anchors[0].anchor.sectionId = 'src/App.tsx:unstaged';
+  delete (input.chapters[0].stops[1].anchors[0].anchor as any).sectionId;
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.segments[0].anchor.sectionId).toBe('src/App.tsx:staged');
-  expect(result.segments[1].anchor.sectionId).toBe('src/__tests__/hunkNavigation.test.ts:staged');
+  expect(result.chapters[0].stops[0].anchors[0].anchor.sectionId).toBe('src/App.tsx:staged');
+  expect(result.chapters[0].stops[1].anchors[0].anchor.sectionId).toBe(
+    'src/__tests__/hunkNavigation.test.ts:staged',
+  );
 });
 
-test('falls back to the first order when defaultOrder is unknown', () => {
+test('throws when no anchors match the diff and there are no live files', () => {
   const input = baseInput();
-  input.defaultOrder = 'results'; // no such order
+  input.chapters[0].stops[0].anchors[0].path = 'nope.ts';
+  input.chapters[0].stops[1].anchors[0].path = 'still-nope.ts';
+  input.support = [];
 
-  const result = normalizeNarrativeWalkthrough(input, files);
-
-  expect(result.defaultOrder).toBe('keys');
-});
-
-test('throws when no segments match the diff', () => {
-  const input = baseInput();
-  input.segments = input.segments.map((segment) => ({ ...segment, path: 'nope.ts' }));
-
-  expect(() => normalizeNarrativeWalkthrough(input, files)).toThrow(/no segments/i);
-});
-
-test('keeps only phases that still have stops, renumbered', () => {
-  const input = baseInput();
-  input.orders[0].phases.push({
-    blurb: 'Nothing references this.',
-    icon: 'flask',
-    id: 'proof',
-    title: 'Proof',
-  });
-
-  const result = normalizeNarrativeWalkthrough(input, files);
-
-  expect(result.orders[0].phases.map((phase: any) => phase.id)).toEqual(['bug']);
-  expect(result.orders[0].phases[0].n).toBe(1);
+  expect(() => normalizeNarrativeWalkthrough(input, [])).toThrow(/no anchors/i);
 });
 
 test('preserves embedded conversation context for in-app Q&A', () => {
@@ -327,17 +398,19 @@ test('preserves embedded conversation context for in-app Q&A', () => {
   expect(result.context.objective).toBe('Stop hunk navigation skipping collapsed files.');
 });
 
-test('normalizes per-segment commit tags', () => {
+test('normalizes per-anchor commit tags', () => {
   const input = baseInput() as any;
-  input.segments[0].changeType = 'fix';
-  input.segments[0].commitNote = 'derive a collapse-independent hunk order';
-  input.segments[2].changeType = 'not-a-tag'; // invalid → dropped
+  input.chapters[0].stops[0].anchors[0].changeType = 'fix';
+  input.chapters[0].stops[0].anchors[0].commitNote = 'derive a collapse-independent hunk order';
+  input.support[0].files[0].changeType = 'not-a-tag';
 
   const result = normalizeNarrativeWalkthrough(input, files);
 
-  expect(result.segments[0].changeType).toBe('fix');
-  expect(result.segments[0].commitNote).toBe('derive a collapse-independent hunk order');
-  expect(result.segments[2].changeType).toBeUndefined();
+  expect(result.chapters[0].stops[0].anchors[0].changeType).toBe('fix');
+  expect(result.chapters[0].stops[0].anchors[0].commitNote).toBe(
+    'derive a collapse-independent hunk order',
+  );
+  expect(result.support[0].files[0].changeType).toBeUndefined();
 });
 
 test('keeps the commit composer for a working-tree staging set', () => {
@@ -355,38 +428,10 @@ test('keeps the commit composer for a working-tree staging set', () => {
   });
 });
 
-test('normalizes legacy commit subjectSeed as title', () => {
-  const input = baseInput() as any;
-  input.commit = {
-    subjectSeed: 'Fix hunk nav',
-  };
-
-  const result = normalizeNarrativeWalkthrough(input, files);
-
-  expect(result.commit).toEqual({
-    title: 'Fix hunk nav',
-  });
-});
-
 test('derives a missing commit title from a title-like body first line', () => {
   const input = baseInput() as any;
   input.commit = {
     body: 'Fix hunk nav\n\nNavigation expands a collapsed target before scrolling.',
-  };
-
-  const result = normalizeNarrativeWalkthrough(input, files);
-
-  expect(result.commit).toEqual({
-    body: 'Navigation expands a collapsed target before scrolling.',
-    title: 'Fix hunk nav',
-  });
-});
-
-test('strips a duplicated commit title from the body', () => {
-  const input = baseInput() as any;
-  input.commit = {
-    body: 'Fix hunk nav\n\nNavigation expands a collapsed target before scrolling.',
-    title: 'Fix hunk nav',
   };
 
   const result = normalizeNarrativeWalkthrough(input, files);
