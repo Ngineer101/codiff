@@ -1,4 +1,4 @@
-import type { CodiffDiffStyle } from './config/types.ts';
+import type { CodiffDiffStyle, CodiffEditor } from './config/types.ts';
 
 export type DiffSection = {
   binary: boolean;
@@ -171,7 +171,7 @@ export type WalkthroughContext = {
 };
 
 export type CodiffLaunchOptions = {
-  agentBackend?: 'codex' | 'claude';
+  agentBackend?: 'codex' | 'claude' | 'cursor';
   claudeSessionId?: string;
   codexSessionId?: string;
   repositoryPathProvided: boolean;
@@ -356,7 +356,7 @@ export type WalkthroughCommit = {
 };
 
 export type NarrativeWalkthrough = {
-  agent: 'codex' | 'claude';
+  agent: 'codex' | 'claude' | 'cursor';
   chapters: ReadonlyArray<WalkthroughChapter>;
   /**
    * When present, the diff is a committable staging set: Codiff adds a commit
@@ -513,12 +513,14 @@ export type DiffImageContentResult =
 export type CodiffTheme = 'system' | 'light' | 'dark';
 
 export type CodiffPreferences = {
-  agentBackend: 'codex' | 'claude';
+  agentBackend: 'codex' | 'claude' | 'cursor';
   claudeModel: string;
   codeFontFamily: string;
   codeFontSize: number;
   copyCommentsOnClose: boolean;
+  cursorModel: string;
   diffStyle: CodiffDiffStyle;
+  editor: CodiffEditor;
   editorCommand: string;
   lastRepositoryPath: string;
   openAIModel: string;

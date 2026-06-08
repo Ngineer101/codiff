@@ -32,6 +32,7 @@ import {
 } from 'react';
 import claudeIconUrl from '../../assets/claude.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import cursorIconUrl from '../../assets/cursor.svg';
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffDiffStyle, CodiffKeymap } from '../../config/types.ts';
 import type {
@@ -272,13 +273,19 @@ function ReviewAvatar({
   return <Gravatar fallback={label} size="medium" url={avatarUrl} />;
 }
 
-function AgentAvatar({ agentId }: { agentId: 'codex' | 'claude' }) {
+const agentIconUrls = {
+  claude: claudeIconUrl,
+  codex: codexIconUrl,
+  cursor: cursorIconUrl,
+} as const;
+
+function AgentAvatar({ agentId }: { agentId: 'codex' | 'claude' | 'cursor' }) {
   return (
     <img
       alt=""
       className="review-comment-avatar-codex"
       draggable={false}
-      src={agentId === 'claude' ? claudeIconUrl : codexIconUrl}
+      src={agentIconUrls[agentId]}
     />
   );
 }
@@ -608,7 +615,7 @@ function ReviewAnnotation({
   onSubmitComment,
   onUpdateComment,
 }: {
-  agentId: 'codex' | 'claude';
+  agentId: 'codex' | 'claude' | 'cursor';
   agentLabel: string;
   annotation: DiffLineAnnotation<ReviewCommentAnnotationMetadata>;
   comments: ReadonlyArray<ReviewComment>;
@@ -1010,7 +1017,7 @@ export function ReviewCodeView({
   wordWrap,
 }: {
   activeSearchMatch: DiffSearchMatch | null;
-  agentId: 'codex' | 'claude';
+  agentId: 'codex' | 'claude' | 'cursor';
   agentLabel: string;
   collapsed: ReadonlySet<string>;
   comments: ReadonlyArray<ReviewComment>;

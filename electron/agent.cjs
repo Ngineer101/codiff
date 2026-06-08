@@ -2,6 +2,7 @@
 
 const codex = require('./codex.cjs');
 const claude = require('./claude.cjs');
+const cursor = require('./cursor.cjs');
 const { readCodexSessionContext } = require('./codex-session-context.cjs');
 const { readClaudeSessionContext } = require('./claude-session-context.cjs');
 
@@ -13,14 +14,14 @@ const { readClaudeSessionContext } = require('./claude-session-context.cjs');
  *   onModelFallback?: (fallbackModel: string, originalModel: string) => Promise<void> | void;
  * }} AgentOptions
  * @typedef {{
- *   id: 'codex' | 'claude';
+ *   id: 'codex' | 'claude' | 'cursor';
  *   label: string;
  *   cliName: string;
  *   cliPathEnvVar: string;
  *   models: ReadonlyArray<{id: string; label: string}>;
  *   defaultModel: string;
  *   fallbackModel: string;
- *   modelSettingKey: 'openAIModel' | 'claudeModel';
+ *   modelSettingKey: 'openAIModel' | 'claudeModel' | 'cursorModel';
  *   normalizeModel: (value: unknown) => string;
  *   notFoundCode: string;
  *   isNotFoundError: (error: unknown) => boolean;
@@ -33,7 +34,7 @@ const { readClaudeSessionContext } = require('./claude-session-context.cjs');
  *     options?: AgentOptions,
  *   ) => Promise<string>;
  *   readSessionContext: (sessionId: string | undefined) => WalkthroughContext | null;
- *   sessionLaunchOptionKey: 'codexSessionId' | 'claudeSessionId';
+ *   sessionLaunchOptionKey: 'codexSessionId' | 'claudeSessionId' | 'cursorSessionId';
  *   skill: {
  *     label: string;
  *     targets: Array<{sourceSubdir: string; targetSubdir: string}>;
@@ -42,8 +43,8 @@ const { readClaudeSessionContext } = require('./claude-session-context.cjs');
  */
 
 const DEFAULT_AGENT_BACKEND = 'codex';
-/** @type {ReadonlyArray<'codex' | 'claude'>} */
-const AGENT_BACKENDS = Object.freeze(['codex', 'claude']);
+/** @type {ReadonlyArray<'codex' | 'claude' | 'cursor'>} */
+const AGENT_BACKENDS = Object.freeze(['codex', 'claude', 'cursor']);
 
 /** @returns {Agent} */
 const createCodexAgent = () => ({
@@ -64,6 +65,28 @@ const createCodexAgent = () => ({
   skill: {
     label: 'Codex Skill',
     targets: [{ sourceSubdir: 'codex/skills/codiff', targetSubdir: '.codex/skills/codiff' }],
+  },
+});
+
+/** @returns {Agent} */
+const createCursorAgent = () => ({
+  id: 'cursor',
+  label: 'Cursor',
+  cliName: 'agent',
+  cliPathEnvVar: 'CODIFF_CURSOR_PATH',
+  models: cursor.CURSOR_MODELS,
+  defaultModel: cursor.DEFAULT_CURSOR_MODEL,
+  fallbackModel: cursor.FALLBACK_CURSOR_MODEL,
+  modelSettingKey: 'cursorModel',
+  normalizeModel: cursor.normalizeCursorModel,
+  notFoundCode: cursor.CURSOR_NOT_FOUND_CODE,
+  isNotFoundError: cursor.isCursorNotFoundError,
+  run: cursor.runCursor,
+  readSessionContext: () => null,
+  sessionLaunchOptionKey: 'cursorSessionId',
+  skill: {
+    label: 'Cursor Skill',
+    targets: [],
   },
 });
 
@@ -89,15 +112,16 @@ const createClaudeAgent = () => ({
   },
 });
 
-/** @type {Record<'codex' | 'claude', () => Agent>} */
+/** @type {Record<'codex' | 'claude' | 'cursor', () => Agent>} */
 const AGENT_FACTORIES = {
   claude: createClaudeAgent,
   codex: createCodexAgent,
+  cursor: createCursorAgent,
 };
 
-/** @param {unknown} value @returns {'codex' | 'claude'} */
+/** @param {unknown} value @returns {'codex' | 'claude' | 'cursor'} */
 const normalizeAgentBackend = (value) =>
-  value === 'codex' || value === 'claude' ? value : DEFAULT_AGENT_BACKEND;
+  value === 'codex' || value === 'claude' || value === 'cursor' ? value : DEFAULT_AGENT_BACKEND;
 
 /** @param {unknown} backendId @returns {Agent} */
 const getAgent = (backendId) => AGENT_FACTORIES[normalizeAgentBackend(backendId)]();

@@ -4,7 +4,7 @@ import { expect, test } from 'vite-plus/test';
 const require = createRequire(import.meta.url);
 const { AGENT_BACKENDS, DEFAULT_AGENT_BACKEND, getAgent, listAgents, normalizeAgentBackend } =
   require('../agent.cjs') as {
-    AGENT_BACKENDS: ReadonlyArray<'codex' | 'claude'>;
+    AGENT_BACKENDS: ReadonlyArray<'codex' | 'claude' | 'cursor'>;
     DEFAULT_AGENT_BACKEND: string;
     getAgent: (backendId: unknown) => {
       id: string;
@@ -23,13 +23,14 @@ const { AGENT_BACKENDS, DEFAULT_AGENT_BACKEND, getAgent, listAgents, normalizeAg
 test('normalizes unknown agent backends to the default', () => {
   expect(normalizeAgentBackend('claude')).toBe('claude');
   expect(normalizeAgentBackend('codex')).toBe('codex');
+  expect(normalizeAgentBackend('cursor')).toBe('cursor');
   expect(normalizeAgentBackend('gpt')).toBe(DEFAULT_AGENT_BACKEND);
   expect(normalizeAgentBackend(undefined)).toBe(DEFAULT_AGENT_BACKEND);
 });
 
-test('lists both agent backends', () => {
-  expect(AGENT_BACKENDS).toEqual(['codex', 'claude']);
-  expect(listAgents().map((agent) => agent.id)).toEqual(['codex', 'claude']);
+test('lists all agent backends', () => {
+  expect(AGENT_BACKENDS).toEqual(['codex', 'claude', 'cursor']);
+  expect(listAgents().map((agent) => agent.id)).toEqual(['codex', 'claude', 'cursor']);
 });
 
 test('resolves the Codex agent with its session and skill wiring', () => {
@@ -57,6 +58,20 @@ test('resolves the Claude Code agent with its session and skill wiring', () => {
     label: 'Claude Code Skill',
     targets: [{ sourceSubdir: 'claude/skills/codiff', targetSubdir: '.claude/skills/codiff' }],
   });
+});
+
+test('resolves the Cursor agent with review-assist wiring', () => {
+  const agent = getAgent('cursor');
+  expect(agent.id).toBe('cursor');
+  expect(agent.label).toBe('Cursor');
+  expect(agent.modelSettingKey).toBe('cursorModel');
+  expect(agent.sessionLaunchOptionKey).toBe('cursorSessionId');
+  expect(agent.notFoundCode).toBe('CURSOR_NOT_FOUND');
+  expect(agent.skill).toEqual({
+    label: 'Cursor Skill',
+    targets: [],
+  });
+  expect(agent.readSessionContext('session-id')).toBeNull();
 });
 
 test('falls back to the default backend for unknown ids', () => {

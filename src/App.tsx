@@ -27,6 +27,7 @@ import { createDefaultConfig } from './config/defaults.ts';
 import { getShortcutLabel, matchesShortcut } from './config/keymap.ts';
 import type { CodiffConfig } from './config/types.ts';
 import {
+  AGENT_BACKEND_OPTIONS,
   defaultAgentSkillStatus,
   defaultLaunchOptions,
   defaultTerminalHelperStatus,
@@ -1530,6 +1531,17 @@ export default function App() {
         id: 'reset-code-font-size',
         title: 'Reset Code Font Size',
       }),
+      ...AGENT_BACKEND_OPTIONS.map((backend) =>
+        registry.register({
+          description: () =>
+            preferencesRef.current.agentBackend === backend.id ? 'Currently selected' : null,
+          execute: () => {
+            void window.codiff.setAgentBackend(backend.id).catch(() => {});
+          },
+          id: `agent-${backend.id}`,
+          title: `Agent: ${backend.label}`,
+        }),
+      ),
       registry.register({
         execute: () => {
           void window.codiff.openConfigFile().catch(() => {});

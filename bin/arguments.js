@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 
 export const flagDefinitions = [
   {
-    argument: '<codex|claude>',
+    argument: '<codex|claude|cursor>',
     description: 'Override the agent backend for this session.',
     name: 'agent',
     type: 'string',
@@ -289,7 +289,10 @@ export const parseArguments = (args) => {
     typeof values['codex-session'] === 'string' ? values['codex-session'] : null;
   const claudeSessionId =
     typeof values['claude-session'] === 'string' ? values['claude-session'] : null;
-  const agentBackend = values.agent === 'codex' || values.agent === 'claude' ? values.agent : null;
+  const agentBackend =
+    values.agent === 'codex' || values.agent === 'claude' || values.agent === 'cursor'
+      ? values.agent
+      : null;
   let pullRequestNumber = null;
   let pullRequestUrl = null;
   let requestedPath = null;

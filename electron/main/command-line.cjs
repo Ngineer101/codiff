@@ -319,7 +319,9 @@ const parseCommandLineArguments = (commandLine = process.argv) => {
   const rawAgentBackend =
     (typeof values.agent === 'string' ? values.agent : '') || envAgentBackend || '';
   const agentBackend =
-    rawAgentBackend === 'codex' || rawAgentBackend === 'claude' ? rawAgentBackend : undefined;
+    rawAgentBackend === 'codex' || rawAgentBackend === 'claude' || rawAgentBackend === 'cursor'
+      ? rawAgentBackend
+      : undefined;
   const walkthroughContextPath =
     (typeof values['walkthrough-context'] === 'string' ? values['walkthrough-context'] : '') ||
     envWalkthroughContextPath ||

@@ -1,12 +1,19 @@
 import claudeIconUrl from '../../../assets/claude.svg';
 import codexIconUrl from '../../../assets/codex.svg';
+import cursorIconUrl from '../../../assets/cursor.svg';
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import { importanceLabel } from '../../../lib/narrative-walkthrough.ts';
 import type { WalkthroughIcon, WalkthroughOrderStop } from '../../../types.ts';
 import { phaseIcons } from './icons.tsx';
 
-export function AgentLogo({ agentId }: { agentId: 'codex' | 'claude' }) {
-  return <img alt="" draggable={false} src={agentId === 'claude' ? claudeIconUrl : codexIconUrl} />;
+const agentIconUrls = {
+  claude: claudeIconUrl,
+  codex: codexIconUrl,
+  cursor: cursorIconUrl,
+} as const;
+
+export function AgentLogo({ agentId }: { agentId: 'codex' | 'claude' | 'cursor' }) {
+  return <img alt="" draggable={false} src={agentIconUrls[agentId]} />;
 }
 
 export function PhaseIcon({ icon, size = 13 }: { icon: WalkthroughIcon; size?: number }) {

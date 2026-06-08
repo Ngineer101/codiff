@@ -1,6 +1,7 @@
 export type CodiffDiffStyle = 'split' | 'unified';
+export type CodiffEditor = 'vscode' | 'cursor' | 'zed';
 export type CodiffTheme = 'system' | 'light' | 'dark';
-export type CodiffAgentBackend = 'codex' | 'claude';
+export type CodiffAgentBackend = 'codex' | 'claude' | 'cursor';
 
 export type CodiffSettings = {
   agentBackend: CodiffAgentBackend;
@@ -8,7 +9,9 @@ export type CodiffSettings = {
   codeFontFamily: string;
   codeFontSize: number;
   copyCommentsOnClose: boolean;
+  cursorModel: string;
   diffStyle: CodiffDiffStyle;
+  editor: CodiffEditor;
   editorCommand: string;
   lastRepositoryPath: string;
   openAIModel: string;

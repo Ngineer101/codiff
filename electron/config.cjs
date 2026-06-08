@@ -116,9 +116,13 @@ const normalizeTheme = (theme) =>
 const normalizeDiffStyle = (diffStyle) =>
   diffStyle === 'split' || diffStyle === 'unified' ? diffStyle : 'split';
 
-/** @param {unknown} backend @returns {'codex' | 'claude'} */
+/** @param {unknown} editor @returns {import('../src/config/types.ts').CodiffEditor} */
+const normalizeEditor = (editor) =>
+  editor === 'cursor' || editor === 'zed' || editor === 'vscode' ? editor : 'vscode';
+
+/** @param {unknown} backend @returns {'codex' | 'claude' | 'cursor'} */
 const normalizeAgentBackend = (backend) =>
-  backend === 'codex' || backend === 'claude' ? backend : 'codex';
+  backend === 'codex' || backend === 'claude' || backend === 'cursor' ? backend : 'codex';
 
 /** @param {unknown} family @returns {string} */
 const normalizeCodeFontFamily = (family) => (typeof family === 'string' ? family.trim() : '');
@@ -239,6 +243,10 @@ const mergeConfig = (raw) => {
         typeof rawSettings.claudeModel === 'string'
           ? rawSettings.claudeModel
           : defaults.settings.claudeModel,
+      cursorModel:
+        typeof rawSettings.cursorModel === 'string'
+          ? rawSettings.cursorModel
+          : defaults.settings.cursorModel,
       codeFontFamily: normalizeCodeFontFamily(rawSettings.codeFontFamily),
       codeFontSize: normalizeCodeFontSize(rawSettings.codeFontSize),
       copyCommentsOnClose:
@@ -246,6 +254,7 @@ const mergeConfig = (raw) => {
           ? rawSettings.copyCommentsOnClose
           : defaults.settings.copyCommentsOnClose,
       diffStyle: normalizeDiffStyle(rawSettings.diffStyle),
+      editor: normalizeEditor(rawSettings.editor ?? defaults.settings.editor),
       editorCommand:
         typeof rawSettings.editorCommand === 'string'
           ? rawSettings.editorCommand

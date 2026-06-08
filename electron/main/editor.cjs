@@ -1,15 +1,102 @@
 // @ts-check
 
 const { execFile } = require('node:child_process');
-const { dirname } = require('node:path');
+const { homedir } = require('node:os');
+const { dirname, join } = require('node:path');
 
 /**
+ * @typedef {'vscode' | 'cursor' | 'zed'} CodiffEditor
  * @typedef {{args: Array<string>; command: string}} EditorCommand
  * @typedef {{repoPath?: string}} EditorCommandContext
  */
 
-/** @param {{getEditorCommand?: () => string; platform?: NodeJS.Platform; shell: import('electron').Shell}} options */
+const DEFAULT_EDITOR = 'vscode';
+
+/** @param {unknown} value @returns {CodiffEditor} */
+const normalizeEditor = (value) =>
+  value === 'cursor' || value === 'zed' || value === 'vscode' ? value : DEFAULT_EDITOR;
+
+/** @param {NodeJS.Platform} platform @param {string} absolutePath @returns {Array<EditorCommand>} */
+const getVscodeCommands = (platform, absolutePath) => {
+  /** @type {Array<EditorCommand>} */
+  const commands = [];
+
+  for (const command of ['/opt/homebrew/bin/code', '/usr/local/bin/code', 'code']) {
+    commands.push({
+      args: ['-g', absolutePath],
+      command,
+    });
+  }
+
+  if (platform === 'darwin') {
+    commands.push({
+      args: ['-a', 'Visual Studio Code', absolutePath],
+      command: 'open',
+    });
+  }
+
+  return commands;
+};
+
+/** @param {NodeJS.Platform} platform @param {string} absolutePath @returns {Array<EditorCommand>} */
+const getCursorCommands = (platform, absolutePath) => {
+  /** @type {Array<EditorCommand>} */
+  const commands = [];
+
+  for (const command of [
+    join(homedir(), '.local/bin/cursor'),
+    '/opt/homebrew/bin/cursor',
+    '/usr/local/bin/cursor',
+    'cursor',
+  ]) {
+    commands.push({
+      args: ['-g', absolutePath],
+      command,
+    });
+  }
+
+  if (platform === 'darwin') {
+    commands.push({
+      args: ['-a', 'Cursor', absolutePath],
+      command: 'open',
+    });
+  }
+
+  return commands;
+};
+
+/** @param {NodeJS.Platform} platform @param {string} absolutePath @returns {Array<EditorCommand>} */
+const getZedCommands = (platform, absolutePath) => {
+  /** @type {Array<EditorCommand>} */
+  const commands = [];
+
+  for (const command of ['/usr/local/bin/zed', '/opt/homebrew/bin/zed', 'zed']) {
+    commands.push({
+      args: [absolutePath],
+      command,
+    });
+  }
+
+  if (platform === 'darwin') {
+    commands.push({
+      args: ['-a', 'Zed', absolutePath],
+      command: 'open',
+    });
+  }
+
+  return commands;
+};
+
+/** @type {Record<CodiffEditor, (platform: NodeJS.Platform, absolutePath: string) => Array<EditorCommand>>} */
+const EDITOR_COMMAND_BUILDERS = {
+  cursor: getCursorCommands,
+  vscode: getVscodeCommands,
+  zed: getZedCommands,
+};
+
+/** @param {{getEditor?: () => CodiffEditor; getEditorCommand?: () => string; platform?: NodeJS.Platform; shell: import('electron').Shell}} options */
 const createEditorOpener = ({
+  getEditor = () => DEFAULT_EDITOR,
   getEditorCommand = () => '',
   platform = process.platform,
   shell,
@@ -65,20 +152,13 @@ const createEditorOpener = ({
           command,
         });
       }
-    }
-
-    for (const command of ['/opt/homebrew/bin/code', '/usr/local/bin/code', 'code']) {
-      commands.push({
-        args: ['-g', absolutePath],
-        command,
-      });
+    } else {
+      commands.push(
+        ...EDITOR_COMMAND_BUILDERS[normalizeEditor(getEditor())](platform, absolutePath),
+      );
     }
 
     if (platform === 'darwin') {
-      commands.push({
-        args: ['-a', 'Visual Studio Code', absolutePath],
-        command: 'open',
-      });
       commands.push({
         args: ['-t', absolutePath],
         command: 'open',
@@ -102,8 +182,9 @@ const createEditorOpener = ({
   return {
     getEditorCommands,
     openFileInEditor,
+    normalizeEditor,
     parseEditorCommand,
   };
 };
 
-module.exports = { createEditorOpener };
+module.exports = { createEditorOpener, normalizeEditor };

@@ -12,8 +12,16 @@ import { Check, GitBranch, Path } from './icons.tsx';
 import { PhaseIcon } from './parts.tsx';
 import type { NarrativeNavigation } from './useNarrativeNavigation.ts';
 
-const agentLabel = (agentId: 'codex' | 'claude') =>
-  agentId === 'claude' ? 'Claude Code' : 'Codex';
+const agentLabel = (agentId: 'codex' | 'claude' | 'cursor') => {
+  switch (agentId) {
+    case 'codex':
+      return 'Codex';
+    case 'claude':
+      return 'Claude Code';
+    case 'cursor':
+      return 'Cursor';
+  }
+};
 
 const fileName = (path: string) => path.split('/').pop() ?? path;
 

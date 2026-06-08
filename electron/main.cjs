@@ -28,6 +28,7 @@ const {
 } = require('./git-state.cjs');
 const { normalizeOpenAIModel } = require('./codex.cjs');
 const { normalizeClaudeModel } = require('./claude.cjs');
+const { normalizeCursorModel } = require('./cursor.cjs');
 const { createWalkthroughCommit } = require('./walkthrough-commit.cjs');
 const { readCommitMessageReply } = require('./walkthrough-commit-message.cjs');
 const { getAgent, listAgents, normalizeAgentBackend } = require('./agent.cjs');
@@ -98,7 +99,7 @@ const pendingCommentsClipboardController = createPendingCommentsClipboardControl
 /** @type {CodiffConfig} */
 let config = createDefaultConfig();
 
-/** @type {Map<'codex' | 'claude', {agent: import('./agent.cjs').Agent; installer: ReturnType<typeof createSkillInstaller>}>} */
+/** @type {Map<'codex' | 'claude' | 'cursor', {agent: import('./agent.cjs').Agent; installer: ReturnType<typeof createSkillInstaller>}>} */
 const skillInstallers = new Map(
   listAgents().map((agent) => [
     agent.id,
@@ -112,11 +113,13 @@ const getActiveAgent = () => getAgent(config.settings.agentBackend);
 const resolveWindowAgent = (webContentsId) => {
   const override = windowLaunchOptions.get(webContentsId)?.agentBackend;
   return getAgent(
-    override === 'codex' || override === 'claude' ? override : config.settings.agentBackend,
+    override === 'codex' || override === 'claude' || override === 'cursor'
+      ? override
+      : config.settings.agentBackend,
   );
 };
 
-/** @param {'codex' | 'claude'} agentId */
+/** @param {'codex' | 'claude' | 'cursor'} agentId */
 const skillInstallerFor = (agentId) => skillInstallers.get(agentId)?.installer;
 const { getTerminalHelperStatus, installTerminalHelper } = createTerminalHelper({
   app,
@@ -124,6 +127,7 @@ const { getTerminalHelperStatus, installTerminalHelper } = createTerminalHelper(
   root,
 });
 const { openFileInEditor } = createEditorOpener({
+  getEditor: () => config.settings.editor,
   getEditorCommand: () => config.settings.editorCommand,
   shell,
 });
@@ -154,6 +158,9 @@ const updateConfig = (nextConfig) => {
       claudeModel: normalizeClaudeModel(
         nextConfig.settings?.claudeModel ?? config.settings.claudeModel,
       ),
+      cursorModel: normalizeCursorModel(
+        nextConfig.settings?.cursorModel ?? config.settings.cursorModel,
+      ),
       codeFontFamily: normalizeCodeFontFamily(
         nextConfig.settings?.codeFontFamily ?? config.settings.codeFontFamily,
       ),
@@ -171,7 +178,7 @@ const updateConfig = (nextConfig) => {
   Menu.setApplicationMenu(buildApplicationMenu());
 };
 
-/** @param {'codex' | 'claude'} backend */
+/** @param {'codex' | 'claude' | 'cursor'} backend */
 const selectAgentBackend = (backend) => {
   const agentBackend = normalizeAgentBackend(backend);
   if (config.settings.agentBackend === agentBackend) {
@@ -367,14 +374,16 @@ const buildModelSubmenu = () => {
 
 /** @returns {Array<import('electron').MenuItemConstructorOptions>} */
 const buildSkillMenuItems = () =>
-  listAgents().map((agent) => ({
-    click:
-      /** @type {NonNullable<import('electron').MenuItemConstructorOptions['click']>} */ (
-        (_menuItem, browserWindow) =>
-          void skillInstallers.get(agent.id)?.installer.install(browserWindow)
-      ),
-    label: `Install ${agent.skill.label}`,
-  }));
+  listAgents()
+    .filter((agent) => agent.skill.targets.length > 0)
+    .map((agent) => ({
+      click:
+        /** @type {NonNullable<import('electron').MenuItemConstructorOptions['click']>} */ (
+          (_menuItem, browserWindow) =>
+            void skillInstallers.get(agent.id)?.installer.install(browserWindow)
+        ),
+      label: `Install ${agent.skill.label}`,
+    }));
 
 /** @returns {import('electron').Menu} */
 const buildApplicationMenu = () =>
@@ -846,6 +855,7 @@ if (squirrelStartup || !lock) {
     config = readConfig();
     config.settings.openAIModel = normalizeOpenAIModel(config.settings.openAIModel);
     config.settings.claudeModel = normalizeClaudeModel(config.settings.claudeModel);
+    config.settings.cursorModel = normalizeCursorModel(config.settings.cursorModel);
     config.settings.agentBackend = normalizeAgentBackend(config.settings.agentBackend);
     nativeTheme.themeSource = config.settings.theme;
     Menu.setApplicationMenu(buildApplicationMenu());
@@ -862,6 +872,7 @@ if (squirrelStartup || !lock) {
           ...nextConfig.settings,
           agentBackend: normalizeAgentBackend(nextConfig.settings.agentBackend),
           claudeModel: normalizeClaudeModel(nextConfig.settings.claudeModel),
+          cursorModel: normalizeCursorModel(nextConfig.settings.cursorModel),
           codeFontFamily: normalizeCodeFontFamily(nextConfig.settings.codeFontFamily),
           codeFontSize: normalizeCodeFontSize(nextConfig.settings.codeFontSize),
           openAIModel: normalizeOpenAIModel(nextConfig.settings.openAIModel),
@@ -1055,6 +1066,15 @@ ipcMain.handle('codiff:getGitIdentity', async (event) => {
 ipcMain.handle('codiff:getPreferences', () => configToPreferences(config));
 
 ipcMain.handle('codiff:getConfig', () => config);
+
+ipcMain.handle('codiff:getAgentBackends', () =>
+  listAgents().map((agent) => ({ id: agent.id, label: agent.label })),
+);
+
+ipcMain.handle('codiff:setAgentBackend', (_event, backend) => {
+  selectAgentBackend(backend);
+  return config.settings.agentBackend;
+});
 
 ipcMain.handle('codiff:setDiffStyle', (_event, value) => {
   updateConfig({

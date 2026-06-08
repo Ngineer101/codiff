@@ -99,6 +99,7 @@ is running so changes apply to open windows.
     "codeFontSize": 13,
     "copyCommentsOnClose": false,
     "diffStyle": "split",
+    "editor": "vscode",
     "editorCommand": "",
     "lastRepositoryPath": "",
     "openAIModel": "gpt-5.3-codex-spark",
@@ -121,8 +122,10 @@ is running so changes apply to open windows.
 }
 ```
 
-Set `settings.editorCommand` to customize file opening. Use `{file}` for the selected file and
-`{repo}` for the repository root, for example `"subl \"{repo}\" \"{file}\""`.
+Set `settings.editor` to choose which IDE opens files: `vscode` (default), `cursor`, or `zed`.
+
+Set `settings.editorCommand` to override that with a custom shell command. Use `{file}` for the
+selected file and `{repo}` for the repository root, for example `"subl \"{repo}\" \"{file}\""`.
 
 Choose `View > Diff > Split` or `View > Diff > Unified`, use Toggle Diff Layout in the command bar,
 or set `settings.diffStyle` to `split` for side-by-side diffs or `unified` for unified diffs.
@@ -139,18 +142,20 @@ combine `Mod`, `Ctrl`, `Alt`, `Shift`, or `Meta` with a key, for example `Mod+Sh
 
 ## Walkthroughs
 
-Codiff uses a local agent CLI for walkthroughs and inline review assistance. It supports two
+Codiff uses a local agent CLI for walkthroughs and inline review assistance. It supports three
 backends, selected with the `settings.agentBackend` config value (or the `--agent` flag for a
 single launch) and the `Agent` application menu:
 
 - `codex` (default) — the OpenAI Codex CLI, configured with `settings.openAIModel`.
 - `claude` — the [Claude Code](https://claude.com/claude-code) CLI, configured with `settings.claudeModel`.
+- `cursor` — the [Cursor Agent](https://cursor.com/docs/cli/overview) CLI, configured with `settings.cursorModel`. Review assistance only for now.
 
 Install the backend you want and verify it is available before using `codiff -w`:
 
 ```bash
 codex --version
 claude --version
+agent --version
 ```
 
 Codiff looks for the CLI on `PATH` and the usual install locations. It does not run your shell
@@ -160,10 +165,18 @@ explicit path:
 ```bash
 CODIFF_CODEX_PATH=/absolute/path/to/codex codiff -w
 CODIFF_CLAUDE_PATH=/absolute/path/to/claude codiff --agent claude -w
+CODIFF_CURSOR_PATH=/absolute/path/to/agent codiff --agent cursor
 ```
 
 Claude Code rides your existing `claude` login (subscription or `ANTHROPIC_API_KEY`); run `claude`
 once and complete `/login` if you have not already.
+
+Cursor Agent uses your Cursor login (`agent login`) or `CURSOR_API_KEY`.
+
+After updating Codiff, fully quit the running app (<kbd>Cmd+Q</kbd>) before relaunching so the
+menu picks up new agent backends. You can also switch agents from the command bar
+(<kbd>Cmd+Shift+P</kbd> → `Agent: Cursor`) or by setting `"agentBackend": "cursor"` in the config
+file.
 
 To drive Codiff from your agent, install its skills from the application menu (`Install Codex Skill`
 or `Install Claude Code Skill`). Codiff updates keep the installed skill current. Invoke it from the
