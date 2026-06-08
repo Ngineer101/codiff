@@ -37,6 +37,9 @@ declare global {
         request: WalkthroughCommitRequest,
       ) => Promise<WalkthroughCommitResult>;
       decreaseCodeFontSize: () => Promise<void>;
+      getAgentBackends: () => Promise<
+        ReadonlyArray<{ id: CodiffPreferences['agentBackend']; label: string }>
+      >;
       getAgentSkillStatus: () => Promise<AgentSkillStatus>;
       getConfig: () => Promise<CodiffConfig>;
       getDiffImageContent: (request: DiffImageContentRequest) => Promise<DiffImageContentResult>;
@@ -61,6 +64,9 @@ declare global {
       openConfigFile: () => Promise<void>;
       openFile: (path: string) => Promise<void>;
       resetCodeFontSize: () => Promise<void>;
+      setAgentBackend: (
+        backend: CodiffPreferences['agentBackend'],
+      ) => Promise<CodiffPreferences['agentBackend']>;
       setDiffStyle: (value: CodiffPreferences['diffStyle']) => Promise<void>;
       setShowOutdated: (value: boolean) => Promise<void>;
       setWordWrap: (value: boolean) => Promise<void>;

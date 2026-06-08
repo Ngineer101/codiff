@@ -8,7 +8,7 @@ const { parseReviewUrl, resolveReviewUrl } = reviewSource;
 
 export const flagDefinitions = [
   {
-    argument: '<codex|claude|pi>',
+    argument: '<codex|claude|pi|cursor>',
     description: 'Override the agent backend for this session.',
     name: 'agent',
     type: 'string',
@@ -216,7 +216,10 @@ export const parseArguments = (args) => {
     typeof values['claude-session'] === 'string' ? values['claude-session'] : null;
   const piSessionId = typeof values['pi-session'] === 'string' ? values['pi-session'] : null;
   const agentBackend =
-    values.agent === 'codex' || values.agent === 'claude' || values.agent === 'pi'
+    values.agent === 'codex' ||
+    values.agent === 'claude' ||
+    values.agent === 'pi' ||
+    values.agent === 'cursor'
       ? values.agent
       : null;
   let pullRequestNumber = null;

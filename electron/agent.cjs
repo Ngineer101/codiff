@@ -3,6 +3,7 @@
 const codex = require('./codex.cjs');
 const claude = require('./claude.cjs');
 const pi = require('./pi.cjs');
+const cursor = require('./cursor.cjs');
 const { readCodexSessionContext } = require('./codex-session-context.cjs');
 const { readClaudeSessionContext } = require('./claude-session-context.cjs');
 const { readPiSessionContext } = require('./pi-session-context.cjs');
@@ -16,14 +17,14 @@ const { readPiSessionContext } = require('./pi-session-context.cjs');
  *   onPartialText?: (delta: string) => void;
  * }} AgentOptions
  * @typedef {{
- *   id: 'codex' | 'claude' | 'pi';
+ *   id: 'codex' | 'claude' | 'pi' | 'cursor';
  *   label: string;
  *   cliName: string;
  *   cliPathEnvVar: string;
  *   models: ReadonlyArray<{id: string; label: string}>;
  *   defaultModel: string;
  *   fallbackModel: string;
- *   modelSettingKey: 'openAIModel' | 'claudeModel' | 'piModel';
+ *   modelSettingKey: 'openAIModel' | 'claudeModel' | 'piModel' | 'cursorModel';
  *   normalizeModel: (value: unknown) => string;
  *   notFoundCode: string;
  *   isNotFoundError: (error: unknown) => boolean;
@@ -36,13 +37,17 @@ const { readPiSessionContext } = require('./pi-session-context.cjs');
  *     options?: AgentOptions,
  *   ) => Promise<string>;
  *   readSessionContext: (sessionId: string | undefined) => WalkthroughContext | null;
- *   sessionLaunchOptionKey: 'codexSessionId' | 'claudeSessionId' | 'piSessionId';
+ *   sessionLaunchOptionKey: 'codexSessionId' | 'claudeSessionId' | 'piSessionId' | 'cursorSessionId';
+ *   skill?: {
+ *     label: string;
+ *     targets: Array<{sourceSubdir: string; targetSubdir: string}>;
+ *   };
  * }} Agent
  */
 
 const DEFAULT_AGENT_BACKEND = 'codex';
-/** @type {ReadonlyArray<'codex' | 'claude' | 'pi'>} */
-const AGENT_BACKENDS = Object.freeze(['codex', 'claude', 'pi']);
+/** @type {ReadonlyArray<'codex' | 'claude' | 'pi' | 'cursor'>} */
+const AGENT_BACKENDS = Object.freeze(['codex', 'claude', 'pi', 'cursor']);
 
 /** @returns {Agent} */
 const createCodexAgent = () => ({
@@ -60,6 +65,28 @@ const createCodexAgent = () => ({
   run: codex.runCodex,
   readSessionContext: readCodexSessionContext,
   sessionLaunchOptionKey: 'codexSessionId',
+});
+
+/** @returns {Agent} */
+const createCursorAgent = () => ({
+  id: 'cursor',
+  label: 'Cursor',
+  cliName: 'agent',
+  cliPathEnvVar: 'CODIFF_CURSOR_PATH',
+  models: cursor.CURSOR_MODELS,
+  defaultModel: cursor.DEFAULT_CURSOR_MODEL,
+  fallbackModel: cursor.FALLBACK_CURSOR_MODEL,
+  modelSettingKey: 'cursorModel',
+  normalizeModel: cursor.normalizeCursorModel,
+  notFoundCode: cursor.CURSOR_NOT_FOUND_CODE,
+  isNotFoundError: cursor.isCursorNotFoundError,
+  run: cursor.runCursor,
+  readSessionContext: () => null,
+  sessionLaunchOptionKey: 'cursorSessionId',
+  skill: {
+    label: 'Cursor Skill',
+    targets: [],
+  },
 });
 
 /** @returns {Agent} */
@@ -98,16 +125,19 @@ const createPiAgent = () => ({
   sessionLaunchOptionKey: 'piSessionId',
 });
 
-/** @type {Record<'codex' | 'claude' | 'pi', () => Agent>} */
+/** @type {Record<'codex' | 'claude' | 'pi' | 'cursor', () => Agent>} */
 const AGENT_FACTORIES = {
   claude: createClaudeAgent,
   codex: createCodexAgent,
+  cursor: createCursorAgent,
   pi: createPiAgent,
 };
 
-/** @param {unknown} value @returns {'codex' | 'claude' | 'pi'} */
+/** @param {unknown} value @returns {'codex' | 'claude' | 'pi' | 'cursor'} */
 const normalizeAgentBackend = (value) =>
-  value === 'codex' || value === 'claude' || value === 'pi' ? value : DEFAULT_AGENT_BACKEND;
+  value === 'codex' || value === 'claude' || value === 'pi' || value === 'cursor'
+    ? value
+    : DEFAULT_AGENT_BACKEND;
 
 /** @param {unknown} backendId @returns {Agent} */
 const getAgent = (backendId) => AGENT_FACTORIES[normalizeAgentBackend(backendId)]();

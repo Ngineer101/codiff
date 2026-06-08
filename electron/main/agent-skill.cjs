@@ -57,9 +57,9 @@ const createSkillInstaller = ({ app, dialog, root, skill }) => {
   };
 
   const getStatus = () => ({
-    installed: skill.targets.every(isInstalledTarget),
+    installed: skill.targets.length === 0 ? true : skill.targets.every(isInstalledTarget),
     // Representative path (the first skill); the install dialog lists them all.
-    path: getTargetPath(skill.targets[0]),
+    path: skill.targets[0] ? getTargetPath(skill.targets[0]) : '',
   });
 
   /** @param {AgentSkillTarget} target @returns {string} the installed path */

@@ -35,6 +35,7 @@ import {
 } from 'react';
 import claudeIconUrl from '../../assets/claude.svg';
 import codexIconUrl from '../../assets/codex.svg';
+import cursorIconUrl from '../../assets/cursor.svg';
 import piIconUrl from '../../assets/pi.svg';
 import { matchesShortcut } from '../../config/keymap.ts';
 import type { CodiffDiffStyle, CodiffKeymap } from '../../config/types.ts';
@@ -287,20 +288,23 @@ function ReviewAvatar({
   return <Gravatar fallback={label} size="medium" url={avatarUrl} />;
 }
 
-function AgentAvatar({ agentId }: { agentId: 'codex' | 'claude' | 'pi' }) {
+const agentIconUrls = {
+  claude: claudeIconUrl,
+  codex: codexIconUrl,
+  cursor: cursorIconUrl,
+  pi: piIconUrl,
+} as const;
+
+function AgentAvatar({ agentId }: { agentId: keyof typeof agentIconUrls }) {
   return (
     <img
       alt=""
       className="review-comment-avatar-codex"
       draggable={false}
-      src={agentIconUrl(agentId)}
+      src={agentIconUrls[agentId]}
     />
   );
 }
-
-const agentIconUrl = (agentId: 'codex' | 'claude' | 'pi') => {
-  return agentId === 'pi' ? piIconUrl : agentId === 'claude' ? claudeIconUrl : codexIconUrl;
-};
 
 const canAskCodexForComment = (comment: ReviewComment) =>
   !comment.isReadOnly && comment.body.trim().length > 0 && comment.codexReply?.status !== 'loading';
@@ -631,7 +635,7 @@ function ReviewCommentEditor({
   onSubmitComment,
   onUpdateComment,
 }: {
-  agentId: 'codex' | 'claude' | 'pi';
+  agentId: 'codex' | 'claude' | 'pi' | 'cursor';
   agentLabel: string;
   comment: ReviewComment;
   displayName: string;
@@ -800,7 +804,7 @@ function ReviewCommentEditor({
                   aria-hidden
                   className="review-comment-action-icon"
                   draggable={false}
-                  src={agentIconUrl(agentId)}
+                  src={agentIconUrls[agentId]}
                 />
                 Ask
               </button>
@@ -897,7 +901,7 @@ function ReviewAnnotation({
   onSubmitComment,
   onUpdateComment,
 }: {
-  agentId: 'codex' | 'claude' | 'pi';
+  agentId: 'codex' | 'claude' | 'pi' | 'cursor';
   agentLabel: string;
   annotation: DiffLineAnnotation<ReviewCommentAnnotationMetadata>;
   comments: ReadonlyArray<ReviewComment>;
@@ -1323,7 +1327,7 @@ export function ReviewCodeView({
   wordWrap,
 }: {
   activeSearchMatch: DiffSearchMatch | null;
-  agentId: 'codex' | 'claude' | 'pi';
+  agentId: 'codex' | 'claude' | 'pi' | 'cursor';
   agentLabel: string;
   blocks?: ReadonlyArray<ReviewDiffBlock>;
   bottomInset?: number;

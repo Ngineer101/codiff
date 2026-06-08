@@ -9,6 +9,7 @@ const codiff = {
     ipcRenderer.invoke('codiff:createWalkthroughCommit', request),
   updateWalkthroughCommitMessage: (request) =>
     ipcRenderer.invoke('codiff:updateWalkthroughCommitMessage', request),
+  getAgentBackends: () => ipcRenderer.invoke('codiff:getAgentBackends'),
   getAgentSkillStatus: () => ipcRenderer.invoke('codiff:getAgentSkillStatus'),
   getConfig: () => ipcRenderer.invoke('codiff:getConfig'),
   decreaseCodeFontSize: () => ipcRenderer.invoke('codiff:decreaseCodeFontSize'),
@@ -71,6 +72,7 @@ const codiff = {
   },
   openConfigFile: () => ipcRenderer.invoke('codiff:openConfigFile'),
   openFile: (path) => ipcRenderer.invoke('codiff:openFile', path),
+  setAgentBackend: (backend) => ipcRenderer.invoke('codiff:setAgentBackend', backend),
   setDiffStyle: (value) => ipcRenderer.invoke('codiff:setDiffStyle', value),
   setShowOutdated: (value) => ipcRenderer.invoke('codiff:setShowOutdated', value),
   setWordWrap: (value) => ipcRenderer.invoke('codiff:setWordWrap', value),

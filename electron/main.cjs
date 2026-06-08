@@ -29,6 +29,7 @@ const {
 } = require('./git-state.cjs');
 const { normalizeOpenAIModel } = require('./codex.cjs');
 const { normalizeClaudeModel } = require('./claude.cjs');
+const { normalizeCursorModel } = require('./cursor.cjs');
 const { createWalkthroughCommit } = require('./walkthrough-commit.cjs');
 const { diagnoseWalkthroughMismatch } = require('./walkthrough-diagnosis.cjs');
 const { readCommitMessageReply } = require('./walkthrough-commit-message.cjs');
@@ -138,13 +139,13 @@ const readRepositoryStateWithConfig = (repositoryPath, source) =>
 const resolveWindowAgent = (webContentsId) => {
   const override = windowLaunchOptions.get(webContentsId)?.agentBackend;
   return getAgent(
-    override === 'codex' || override === 'claude' || override === 'pi'
+    override === 'codex' || override === 'claude' || override === 'pi' || override === 'cursor'
       ? override
       : config.settings.agentBackend,
   );
 };
 
-/** @param {'codex' | 'claude' | 'pi'} agentId */
+/** @param {'codex' | 'claude' | 'pi' | 'cursor'} agentId */
 const skillInstallerFor = (agentId) => skillInstallers.get(agentId);
 const { getTerminalHelperStatus, installTerminalHelper } = createTerminalHelper({
   app,
@@ -152,6 +153,7 @@ const { getTerminalHelperStatus, installTerminalHelper } = createTerminalHelper(
   root,
 });
 const { openFileInEditor } = createEditorOpener({
+  getEditor: () => config.settings.editor,
   getEditorCommand: () => config.settings.editorCommand,
   shell,
 });
@@ -182,6 +184,9 @@ const updateConfig = (nextConfig) => {
       claudeModel: normalizeClaudeModel(
         nextConfig.settings?.claudeModel ?? config.settings.claudeModel,
       ),
+      cursorModel: normalizeCursorModel(
+        nextConfig.settings?.cursorModel ?? config.settings.cursorModel,
+      ),
       codeFontFamily: normalizeCodeFontFamily(
         nextConfig.settings?.codeFontFamily ?? config.settings.codeFontFamily,
       ),
@@ -200,7 +205,7 @@ const updateConfig = (nextConfig) => {
   Menu.setApplicationMenu(buildApplicationMenu());
 };
 
-/** @param {'codex' | 'claude' | 'pi'} backend */
+/** @param {'codex' | 'claude' | 'pi' | 'cursor'} backend */
 const selectAgentBackend = (backend) => {
   const agentBackend = normalizeAgentBackend(backend);
   if (config.settings.agentBackend === agentBackend) {
@@ -854,6 +859,7 @@ if (squirrelStartup || !lock) {
     config.settings.openAIModel = normalizeOpenAIModel(config.settings.openAIModel);
     config.settings.claudeModel = normalizeClaudeModel(config.settings.claudeModel);
     config.settings.piModel = normalizePiModel(config.settings.piModel);
+    config.settings.cursorModel = normalizeCursorModel(config.settings.cursorModel);
     config.settings.agentBackend = normalizeAgentBackend(config.settings.agentBackend);
     nativeTheme.themeSource = config.settings.theme;
     Menu.setApplicationMenu(buildApplicationMenu());
@@ -871,6 +877,7 @@ if (squirrelStartup || !lock) {
           ...nextConfig.settings,
           agentBackend: normalizeAgentBackend(nextConfig.settings.agentBackend),
           claudeModel: normalizeClaudeModel(nextConfig.settings.claudeModel),
+          cursorModel: normalizeCursorModel(nextConfig.settings.cursorModel),
           codeFontFamily: normalizeCodeFontFamily(nextConfig.settings.codeFontFamily),
           codeFontSize: normalizeCodeFontSize(nextConfig.settings.codeFontSize),
           openAIModel: normalizeOpenAIModel(nextConfig.settings.openAIModel),
@@ -1156,6 +1163,15 @@ ipcMain.handle('codiff:getConfig', () => config);
 ipcMain.handle('codiff:isWindowFullScreen', (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   return window?.isFullScreen() ?? false;
+});
+
+ipcMain.handle('codiff:getAgentBackends', () =>
+  listAgents().map((agent) => ({ id: agent.id, label: agent.label })),
+);
+
+ipcMain.handle('codiff:setAgentBackend', (_event, backend) => {
+  selectAgentBackend(backend);
+  return config.settings.agentBackend;
 });
 
 ipcMain.handle('codiff:setDiffStyle', (_event, value) => {

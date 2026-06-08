@@ -4,6 +4,7 @@ import { expect, test } from 'vite-plus/test';
 const require = createRequire(import.meta.url);
 const { createEditorOpener } = require('../main/editor.cjs') as {
   createEditorOpener: (options: {
+    getEditor?: () => 'vscode' | 'cursor' | 'zed';
     getEditorCommand?: () => string;
     platform?: NodeJS.Platform;
     shell: {
@@ -24,7 +25,11 @@ const { createEditorOpener } = require('../main/editor.cjs') as {
 };
 
 const createOpener = (
-  options: { getEditorCommand?: () => string; platform?: NodeJS.Platform } = {},
+  options: {
+    getEditor?: () => 'vscode' | 'cursor' | 'zed';
+    getEditorCommand?: () => string;
+    platform?: NodeJS.Platform;
+  } = {},
 ) =>
   createEditorOpener({
     ...options,
@@ -92,6 +97,38 @@ test('appends the file path when the configured editor command only uses the rep
   ).toEqual({
     args: ['/Users/test/project', '/Users/test/project/src/file.ts'],
     command: 'subl',
+  });
+});
+
+test('uses the configured editor preference for Cursor', () => {
+  const opener = createOpener({
+    getEditor: () => 'cursor',
+    platform: 'darwin',
+  });
+
+  expect(opener.getEditorCommands('/Users/test/project/file.ts')[0]).toEqual({
+    args: ['-g', '/Users/test/project/file.ts'],
+    command: expect.stringMatching(/cursor$/),
+  });
+  expect(opener.getEditorCommands('/Users/test/project/file.ts')).toContainEqual({
+    args: ['-a', 'Cursor', '/Users/test/project/file.ts'],
+    command: 'open',
+  });
+});
+
+test('uses the configured editor preference for Zed', () => {
+  const opener = createOpener({
+    getEditor: () => 'zed',
+    platform: 'darwin',
+  });
+
+  expect(opener.getEditorCommands('/Users/test/project/file.ts')[0]).toEqual({
+    args: ['/Users/test/project/file.ts'],
+    command: '/usr/local/bin/zed',
+  });
+  expect(opener.getEditorCommands('/Users/test/project/file.ts')).toContainEqual({
+    args: ['-a', 'Zed', '/Users/test/project/file.ts'],
+    command: 'open',
   });
 });
 

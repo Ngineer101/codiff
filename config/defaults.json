@@ -2,10 +2,12 @@
   "settings": {
     "agentBackend": "codex",
     "claudeModel": "claude-sonnet-4-6",
+    "cursorModel": "composer-2.5",
     "codeFontFamily": "",
     "codeFontSize": 13,
     "copyCommentsOnClose": false,
     "diffStyle": "split",
+    "editor": "vscode",
     "editorCommand": "",
     "lastRepositoryPath": "",
     "openAIModel": "gpt-5.3-codex-spark",

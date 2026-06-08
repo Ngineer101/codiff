@@ -16,8 +16,19 @@ export const defaultAgentSkillStatus: AgentSkillStatus = {
 const AGENT_LABELS: Record<CodiffAgentBackend, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  cursor: 'Cursor',
   pi: 'Pi',
 };
+
+export const AGENT_BACKEND_OPTIONS: ReadonlyArray<{
+  id: CodiffAgentBackend;
+  label: string;
+}> = Object.freeze(
+  (Object.keys(AGENT_LABELS) as Array<CodiffAgentBackend>).map((id) => ({
+    id,
+    label: AGENT_LABELS[id],
+  })),
+);
 
 export const getAgentLabel = (backend: CodiffAgentBackend): string =>
   AGENT_LABELS[backend] ?? AGENT_LABELS.codex;
