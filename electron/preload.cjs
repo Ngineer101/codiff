@@ -25,6 +25,7 @@ const codiff = {
   installAgentSkill: () => ipcRenderer.invoke('codiff:installAgentSkill'),
   installTerminalHelper: () => ipcRenderer.invoke('codiff:installTerminalHelper'),
   increaseCodeFontSize: () => ipcRenderer.invoke('codiff:increaseCodeFontSize'),
+  isWindowFullScreen: () => ipcRenderer.invoke('codiff:isWindowFullScreen'),
   onConfigChanged: (callback) => {
     /** @param {Electron.IpcRendererEvent} _event @param {import('../src/config/types.ts').CodiffConfig} nextConfig */
     const listener = (_event, nextConfig) => callback(nextConfig);
@@ -54,6 +55,12 @@ const codiff = {
     const listener = () => callback();
     ipcRenderer.on('codiff:findInDiffs', listener);
     return () => ipcRenderer.removeListener('codiff:findInDiffs', listener);
+  },
+  onWindowFullScreenChanged: (callback) => {
+    /** @param {Electron.IpcRendererEvent} _event @param {boolean} isFullScreen */
+    const listener = (_event, isFullScreen) => callback(Boolean(isFullScreen));
+    ipcRenderer.on('codiff:windowFullScreenChanged', listener);
+    return () => ipcRenderer.removeListener('codiff:windowFullScreenChanged', listener);
   },
   onRepositoryChanged: (callback) => {
     /** @param {Electron.IpcRendererEvent} _event @param {{root: string}} change */

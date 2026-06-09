@@ -657,7 +657,7 @@ const createWindow = (
     show: false,
     title: `Codiff - ${repositoryPath}`,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 25, y: 22 } } : {}),
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 12, y: 12 } } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -686,6 +686,12 @@ const createWindow = (
   if (!launchOptions.source) {
     startRepositoryWatcher(window, repositoryPath);
   }
+  window.on('enter-full-screen', () => {
+    window.webContents.send('codiff:windowFullScreenChanged', true);
+  });
+  window.on('leave-full-screen', () => {
+    window.webContents.send('codiff:windowFullScreenChanged', false);
+  });
   window.once('ready-to-show', () => window.show());
   let allowClose = false;
   let copyingPendingCommentsBeforeClose = false;
@@ -1018,7 +1024,11 @@ ipcMain.handle('codiff:askReviewAssistant', async (event, request) => {
 
 ipcMain.handle('codiff:createWalkthroughCommit', async (event, request) => {
   const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
-  return createWalkthroughCommit(repositoryPath, request);
+  const result = await createWalkthroughCommit(repositoryPath, request);
+  if (result.status === 'committed') {
+    await resetRepositoryWatcher(event.sender.id, repositoryPath);
+  }
+  return result;
 });
 
 ipcMain.handle('codiff:updateWalkthroughCommitMessage', async (event, request) => {
@@ -1062,6 +1072,11 @@ ipcMain.handle('codiff:getGitIdentity', async (event) => {
 ipcMain.handle('codiff:getPreferences', () => configToPreferences(config));
 
 ipcMain.handle('codiff:getConfig', () => config);
+
+ipcMain.handle('codiff:isWindowFullScreen', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  return window?.isFullScreen() ?? false;
+});
 
 ipcMain.handle('codiff:setDiffStyle', (_event, value) => {
   updateConfig({

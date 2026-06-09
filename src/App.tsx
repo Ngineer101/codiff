@@ -217,6 +217,7 @@ export default function App() {
   const [scrollTarget, setScrollTarget] = useState<ReviewScrollTarget | null>(null);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [isWindowFullScreen, setIsWindowFullScreen] = useState(false);
   const [pendingSource, setPendingSource] = useState<ReviewSource | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [loadingSectionIds, setLoadingSectionIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -869,6 +870,11 @@ export default function App() {
       );
     });
     return removeListener;
+  }, []);
+
+  useEffect(() => {
+    void window.codiff.isWindowFullScreen().then(setIsWindowFullScreen, () => {});
+    return window.codiff.onWindowFullScreenChanged(setIsWindowFullScreen);
   }, []);
 
   useEffect(() => {
@@ -2149,11 +2155,11 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
+      className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}${
+        isWindowFullScreen ? ' window-fullscreen' : ''
+      }`}
       style={
-        sidebarCollapsed
-          ? undefined
-          : { gridTemplateColumns: `${sidebarWidth}px 6px minmax(0, 1fr)` }
+        sidebarCollapsed ? undefined : { gridTemplateColumns: `${sidebarWidth}px 0 minmax(0, 1fr)` }
       }
     >
       <div aria-hidden className="window-drag-region" />

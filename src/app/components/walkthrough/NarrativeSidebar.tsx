@@ -1,6 +1,5 @@
 import { renderInlineMarkdown } from '../../../lib/markdown.tsx';
 import {
-  buildCommitModel,
   formatWalkthroughFileLineRows,
   getUncoveredWalkthroughFileLineItems,
   isWalkthroughCommittable,
@@ -167,12 +166,6 @@ export function NarrativeSidebar({
     navigation.mode === 'stop' ? walkthroughView.sequence[navigation.index]?.id : null;
 
   const committable = isWalkthroughCommittable(walkthrough);
-  const commitModel = committable ? buildCommitModel(walkthroughView, files) : null;
-  const commitFiles = commitModel
-    ? formatWalkthroughFileLineRows(
-        commitModel.files.filter((file) => navigation.commitSelected.has(file.path)),
-      )
-    : null;
 
   return (
     <div className="walkthrough-list">
@@ -209,7 +202,7 @@ export function NarrativeSidebar({
           showWhitespace={showWhitespace}
           walkthroughView={walkthroughView}
         />
-        {committable && commitFiles ? (
+        {committable ? (
           <div className="wt-toc-chapter">
             <div className="wt-toc-chapter-head">
               <span className="wt-toc-chapter-icon commit">
@@ -231,7 +224,6 @@ export function NarrativeSidebar({
                 <span className="wt-toc-title-row">
                   <span className="wt-toc-title">Write the commit</span>
                 </span>
-                <TocFileRows files={commitFiles} />
               </span>
             </button>
           </div>
