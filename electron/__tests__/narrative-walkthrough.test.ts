@@ -38,6 +38,10 @@ const fourHunkPatch = Array.from(
   { length: 4 },
   (_, index) => `@@ -${index + 1} +${index + 1} @@\n-old ${index + 1}\n+new ${index + 1}\n`,
 ).join('');
+const manyHunkPatch = Array.from(
+  { length: 18 },
+  (_, index) => `@@ -${index + 1} +${index + 1} @@\n-old ${index + 1}\n+new ${index + 1}\n`,
+).join('');
 
 const files = [
   {
@@ -170,6 +174,9 @@ test('prompts generated walkthroughs to use deterministic hunk groups', () => {
   expect(prompt).toContain('Default to one review idea per stop');
   expect(prompt).toContain('A stop or support item may contain at most 14 hunkIds');
   expect(prompt).toContain('Use multiple hunkIds when the prose needs those hunks read together');
+  expect(prompt).toContain('Generated-like files have "generated": true');
+  expect(prompt).toContain('Never split them');
+  expect(prompt).toContain('main-path them only when they explain behavior');
   expect(prompt).toContain('Put hunkIds in the exact display order');
   expect(prompt).toContain('Use notes[] on a stop/support item');
   expect(prompt).not.toContain('comments[]');
@@ -228,6 +235,35 @@ test('repository digest exposes deterministic hunk ids and counts', () => {
   expect(prompt).toContain('"added": 1');
   expect(prompt).toContain('"deleted": 1');
   expect(prompt).toContain('Do not provide added/deleted counts');
+});
+
+test('repository digest collapses generated files to one synthetic hunk', () => {
+  const prompt = buildNarrativeWalkthroughPrompt({
+    branch: 'main',
+    files: [
+      {
+        path: 'pnpm-lock.yaml',
+        sections: [
+          {
+            id: 'pnpm-lock.yaml:staged',
+            kind: 'staged',
+            patch: manyHunkPatch,
+          },
+        ],
+        status: 'modified',
+      },
+    ],
+    generatedAt: 1,
+    root: '/repo',
+    source: { type: 'working-tree' },
+  });
+
+  expect(prompt).toContain('"generated": true');
+  expect(prompt).toContain('"id": "pnpm-lock.yaml:staged:h1"');
+  expect(prompt).toContain('"kind": "synthetic"');
+  expect(prompt).toContain('"added": 18');
+  expect(prompt).toContain('"deleted": 18');
+  expect(prompt).not.toContain('"id": "pnpm-lock.yaml:staged:h2"');
 });
 
 test('repository digest exposes synthetic hunk ids for non-text sections', () => {
@@ -491,6 +527,28 @@ test('adds unreferenced live hunks to support so changed code remains visible', 
     ['pnpm-lock.yaml:staged:h1'],
     ['wide.py:staged:h1', 'wide.py:staged:h2', 'wide.py:staged:h3', 'wide.py:staged:h4'],
   ]);
+});
+
+test('adds unreferenced generated files to support as one review unit', () => {
+  const input = baseInput();
+  input.support = [];
+  const generatedFile = {
+    path: 'src/__generated__/api.ts',
+    sections: [{ id: 'src/__generated__/api.ts:staged', kind: 'staged', patch: manyHunkPatch }],
+    status: 'modified',
+  };
+
+  const result = normalizeNarrativeWalkthrough(input, [...files, generatedFile]);
+  const generatedSupport = result.support.find(
+    (item: any) => item.hunks[0]?.path === 'src/__generated__/api.ts',
+  );
+
+  expect(generatedSupport).toMatchObject({
+    added: 18,
+    deleted: 18,
+    hunkIds: ['src/__generated__/api.ts:staged:h1'],
+    hunks: [{ kind: 'synthetic', path: 'src/__generated__/api.ts' }],
+  });
 });
 
 test('normalizes ordered cross-file hunk groups under one stop', () => {

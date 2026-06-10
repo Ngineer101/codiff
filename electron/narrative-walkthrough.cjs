@@ -27,6 +27,7 @@ const {
   getSectionWalkthroughHunks,
   hunkDisplayEnd,
   hunkDisplayStart,
+  isGeneratedWalkthroughPath,
   isSyntheticWalkthroughHunk,
   sumHunkLineCounts,
 } = require('../shared/narrative-walkthrough-diff.cjs');
@@ -539,26 +540,40 @@ const buildPromptInput = (state) => {
 
   return {
     branch: state.branch,
-    files: state.files.map((file) => ({
-      oldPath: file.oldPath,
-      path: file.path,
-      sections: file.sections.map((section) => {
-        const patchExcerpt = buildPatchExcerpt(section, remainingPatchBudget, patchBudget.section);
-        remainingPatchBudget = Math.max(0, remainingPatchBudget - patchExcerpt.length);
-        const hunks = getSectionWalkthroughHunks(file, section).map(buildPromptHunkInput);
+    files: state.files.map((file) => {
+      const generated = isGeneratedWalkthroughPath(file.path);
+      return {
+        ...(generated
+          ? {
+              generated: true,
+              generatedReason:
+                'Generated-like file; Codiff exposes each changed section as one synthetic hunk.',
+            }
+          : {}),
+        oldPath: file.oldPath,
+        path: file.path,
+        sections: file.sections.map((section) => {
+          const patchExcerpt = buildPatchExcerpt(
+            section,
+            remainingPatchBudget,
+            patchBudget.section,
+          );
+          remainingPatchBudget = Math.max(0, remainingPatchBudget - patchExcerpt.length);
+          const hunks = getSectionWalkthroughHunks(file, section).map(buildPromptHunkInput);
 
-        return {
-          binary: section.binary,
-          hunks,
-          id: section.id,
-          kind: section.kind,
-          loadState: section.loadState,
-          patchExcerpt,
-          summary: section.summary?.reason,
-        };
-      }),
-      status: file.status,
-    })),
+          return {
+            binary: section.binary,
+            hunks,
+            id: section.id,
+            kind: section.kind,
+            loadState: section.loadState,
+            patchExcerpt,
+            summary: section.summary?.reason,
+          };
+        }),
+        status: file.status,
+      };
+    }),
     generatedAt: state.generatedAt,
     root: state.root,
     source: state.source,
@@ -618,12 +633,13 @@ Grouping contract:
 - Use ${targetChapterInstruction}. A chapter is a conceptual group, not a file. For one- or two-file diffs, prefer one chapter unless there are clearly separate review phases.
 - Chapter titles render in a compact top bar: keep each title to 1-2 short words and at most 16 characters, e.g. "UI", "CLI", "Tests", "Docs", "Runtime", "Cleanup".
 - A stop or support item may contain at most ${MAX_HUNKS_PER_WALKTHROUGH_GROUP} hunkIds. Use multiple hunkIds when the prose needs those hunks read together to understand one invariant, behavior, or repeated pattern.
+- Generated-like files have "generated": true and one synthetic hunk per changed section. Never split them; main-path them only when they explain behavior, like snapshots proving output.
 - For 1-4 total hunks, usually write 1-2 stops. Similar same-file hunks should usually be one stop with multiple hunkIds, not separate chapters or stops.
 - Split distant same-file hunks into separate consecutive stops when they deserve separate prose. Do not make a chapter-sized stop.
 - Put hunkIds in the exact display order you want Codiff to render. Out-of-line and cross-file order is allowed when it improves reviewer comprehension.
 - Use notes[] on a stop/support item for short per-hunk header notes: each note is { hunkId, body } and hunkId must be one of that item's hunkIds.
 - Do not provide added/deleted counts, status, oldPath, section ids, display labels, path, repo, source, generatedAt, agent, or meta; Codiff computes those.
-- Put secondary, mechanical, generated, docs-only, or repeated-pattern hunks in support[], grouped by reason.
+- Put secondary, mechanical, docs-only, or repeated-pattern hunks in support[], grouped by reason.
 - For working-tree sources, include commit.title and commit.body by default unless there are no commit-worthy files. Put the subject line in commit.title, not as the first line of commit.body.
 `;
 };

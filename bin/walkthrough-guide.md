@@ -32,7 +32,9 @@ choose.
   Use these when a specific hunk needs a label under its file header.
 - **`support[]`** — changed hunks that should stay off the main path. Use it for generated files,
   lockfiles, snapshots, docs-only changes, and repeated mechanical edits unless they are essential
-  to review. Codiff adds any omitted live-diff hunks to support.
+  to review. Codiff adds any omitted live-diff hunks to support. Generated-like files are one
+  synthetic hunk per changed section; never split them, but keep behavior-relevant snapshots or
+  artifacts on the main path.
 - **`changeType?` / `commitNote?`** — optional commit composer metadata for committable
   walkthroughs.
 - **`commit?`** — for working-tree walkthroughs, include `title` and `body` when there is enough
@@ -49,6 +51,7 @@ choose.
   chapters or stops. Split them only when the reviewer needs different prose for different ideas.
 - Do not make one stop per file for broad changes. Group hunks that implement the same idea in
   one stop.
+- Never split a generated-like file across stops or support items. Use its single synthetic hunk id.
 - Keep `summary` to one concrete sentence. Keep `prose` short and specific. Do not use markdown
   headings, lists, or other block structure. Inline code is supported, though: wrap symbol names,
   file paths, flags, and other literals in backticks, e.g. `--walkthrough-file` or `renderInlineMarkdown`.

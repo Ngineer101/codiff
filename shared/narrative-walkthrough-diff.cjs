@@ -2,6 +2,101 @@
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
+const GENERATED_DIRECTORY_NAMES = new Set([
+  '__generated__',
+  '__snapshots__',
+  '.generated',
+  'codegen',
+  'gen',
+  'generated',
+  'generated-sources',
+  'generated-src',
+]);
+
+const GENERATED_BASENAMES = new Set([
+  'bun.lock',
+  'bun.lockb',
+  'cargo.lock',
+  'gemfile.lock',
+  'npm-shrinkwrap.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'poetry.lock',
+  'pubspec.lock',
+  'uv.lock',
+  'yarn.lock',
+]);
+
+const GENERATED_EXTENSIONS = [
+  '.d.ts.map',
+  '.g.dart',
+  '.generated.cjs',
+  '.generated.css',
+  '.generated.js',
+  '.generated.jsx',
+  '.generated.mjs',
+  '.generated.ts',
+  '.generated.tsx',
+  '.pb.go',
+  '.pb.gw.go',
+  '.snap',
+  '.snapshot',
+];
+
+const GENERATED_SUFFIXES = [
+  '-generated.js',
+  '-generated.ts',
+  '-generated.tsx',
+  '.min.cjs',
+  '.min.css',
+  '.min.js',
+  '.min.mjs',
+  '.pb.cc',
+  '.pb.h',
+  '.pb.rb',
+  '_generated.go',
+  '_generated.rs',
+  '_pb2.py',
+  '_pb2_grpc.py',
+];
+
+/** @param {string} path */
+const getPathParts = (path) => path.replaceAll('\\', '/').split('/').filter(Boolean);
+
+/** @param {string} path */
+const isGeneratedWalkthroughPath = (path) => {
+  const parts = getPathParts(path).map((part) => part.toLowerCase());
+  const basename = parts.at(-1) || '';
+  if (!basename) {
+    return false;
+  }
+
+  return (
+    parts.some((part) => GENERATED_DIRECTORY_NAMES.has(part)) ||
+    GENERATED_BASENAMES.has(basename) ||
+    GENERATED_EXTENSIONS.some((extension) => basename.endsWith(extension)) ||
+    GENERATED_SUFFIXES.some((suffix) => basename.endsWith(suffix)) ||
+    (basename.endsWith('.map') && !basename.endsWith('.importmap'))
+  );
+};
+
+/** @param {string} path */
+const getGeneratedWalkthroughSummary = (path) => {
+  const parts = getPathParts(path).map((part) => part.toLowerCase());
+  const basename = parts.at(-1) || '';
+  if (GENERATED_BASENAMES.has(basename)) {
+    return 'Lockfile collapsed into one generated-file review unit.';
+  }
+  if (
+    parts.includes('__snapshots__') ||
+    basename.endsWith('.snap') ||
+    basename.endsWith('.snapshot')
+  ) {
+    return 'Snapshot collapsed into one generated-file review unit.';
+  }
+  return 'Generated file collapsed into one review unit.';
+};
+
 /** @param {string} line */
 const parseHunkHeader = (line) => {
   const match = HUNK_HEADER.exec(line);
@@ -139,9 +234,9 @@ const shouldCreateSyntheticHunk = (file, section) => {
  * @param {{oldPath?: string; path: string; status: string}} file
  * @param {{binary?: boolean; id: string; kind: string; loadState?: string; patch?: string; summary?: {reason?: string}}} section
  */
-const createSyntheticSectionHunk = (file, section) => ({
-  added: 0,
-  deleted: 0,
+const createSyntheticSectionHunk = (file, section, lineCount = { added: 0, deleted: 0 }) => ({
+  added: lineCount.added,
+  deleted: lineCount.deleted,
   id: `${section.id}:h1`,
   index: 1,
   kind: 'synthetic',
@@ -150,7 +245,9 @@ const createSyntheticSectionHunk = (file, section) => ({
   sectionId: section.id,
   sectionKind: section.kind,
   status: file.status,
-  summary: section.summary?.reason,
+  summary:
+    section.summary?.reason ??
+    (isGeneratedWalkthroughPath(file.path) ? getGeneratedWalkthroughSummary(file.path) : undefined),
 });
 
 /**
@@ -163,6 +260,10 @@ const createSyntheticSectionHunk = (file, section) => ({
  */
 const getSectionWalkthroughHunks = (file, section) => {
   const patchHunks = extractPatchHunks(section.patch || '');
+  if (patchHunks.length > 0 && isGeneratedWalkthroughPath(file.path)) {
+    return [createSyntheticSectionHunk(file, section, sumHunkLineCounts(patchHunks))];
+  }
+
   if (patchHunks.length > 0) {
     return patchHunks.map((hunk, index) => ({
       ...hunk,
@@ -262,6 +363,7 @@ module.exports = {
   HUNK_HEADER,
   hunkDisplayEnd,
   hunkDisplayStart,
+  isGeneratedWalkthroughPath,
   isSyntheticWalkthroughHunk,
   parseHunkHeader,
   sumHunkLineCounts,
