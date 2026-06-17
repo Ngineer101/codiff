@@ -23,6 +23,8 @@ const {
   readGitIdentity,
   readRepositoryChangeSignature,
   readRepositoryState,
+  deletePullRequestComment,
+  discardWorkingTreeFile,
   submitPullRequestComment,
   submitPullRequestReview,
   validateRepositoryPath,
@@ -1121,6 +1123,16 @@ ipcMain.handle('codiff:updateWalkthroughCommitMessage', async (event, request) =
   );
   const agent = resolveWindowAgent(event.sender.id);
   return readCommitMessageReply(state, request, agent, getAgentOptions(agent));
+});
+
+ipcMain.handle('codiff:deletePullRequestComment', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return deletePullRequestComment(repositoryPath, request);
+});
+
+ipcMain.handle('codiff:discardWorkingTreeFile', async (event, request) => {
+  const repositoryPath = windowRepositories.get(event.sender.id) || getLaunchPath();
+  return discardWorkingTreeFile(repositoryPath, request);
 });
 
 ipcMain.handle('codiff:submitPullRequestComment', async (event, request) => {

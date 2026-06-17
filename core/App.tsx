@@ -11,11 +11,13 @@ import { KeyboardShortcutsHelp } from './app/components/KeyboardShortcutsHelp.ts
 import {
   AgentUnavailablePanel,
   CopyCommentsButton,
+  DiffLayoutToggle,
   DiffSearchPanel,
   FirstRunPanel,
   PullRequestReviewButtons,
   RepositoryChangeBanner,
   RepositoryLoadErrorPanel,
+  ReviewFeedbackToast,
   ReviewSourceLoading,
   WalkthroughOutdatedBanner,
 } from './app/components/Panels.tsx';
@@ -81,6 +83,7 @@ import {
 import {
   buildReviewCommentsMarkdown,
   getCommentKey,
+  getGitHubCommentDatabaseId,
   getReviewCommentRangeProps,
   getReviewCommentsFromState,
   getVisibleReviewComments,
@@ -240,6 +243,8 @@ export default function App() {
     defaultTerminalHelperStatus,
   );
   const [viewed, setViewed] = useState<Record<string, string>>({});
+  const [hideViewedFiles, setHideViewedFiles] = useState(false);
+  const [reviewFeedbackMessage, setReviewFeedbackMessage] = useState<string | null>(null);
   const [narrativeWalkthrough, setNarrativeWalkthrough] = useState<NarrativeWalkthrough | null>(
     null,
   );
@@ -269,6 +274,8 @@ export default function App() {
   const sourceRequestRef = useRef(0);
   const stateGenerationRef = useRef(0);
   const viewedRef = useRef<Record<string, string>>({});
+  const hideViewedFilesRef = useRef(false);
+  const reviewFeedbackTimerRef = useRef<number | null>(null);
   const narrativeWalkthroughRef = useRef<NarrativeWalkthrough | null>(null);
   const navigationResetKey = state ? `${state.root}:${getSourceKey(state.source)}` : '';
   const narrativeNavigation = useNarrativeNavigation(
@@ -458,6 +465,7 @@ export default function App() {
 
     sourceSessionsRef.current.set(getSourceKey(currentState.source), {
       collapsed: new Set(collapsedRef.current),
+      hideViewedFiles: hideViewedFilesRef.current,
       narrativeWalkthrough: narrativeWalkthroughRef.current,
       reviewComments: reviewCommentsRef.current,
       selectedPath: selectedPathRef.current,
@@ -976,6 +984,19 @@ export default function App() {
   }, [viewed]);
 
   useEffect(() => {
+    hideViewedFilesRef.current = hideViewedFiles;
+  }, [hideViewedFiles]);
+
+  useEffect(
+    () => () => {
+      if (reviewFeedbackTimerRef.current != null) {
+        window.clearTimeout(reviewFeedbackTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
     narrativeWalkthroughRef.current = narrativeWalkthrough;
   }, [narrativeWalkthrough]);
 
@@ -995,12 +1016,21 @@ export default function App() {
   const fileFilteredFiles = useMemo(
     () =>
       state
-        ? orderedFiles.filter(
-            (file) =>
-              fuzzyMatches(file.path, fileSearchQuery) && fileHasVisibleDiff(file, showWhitespace),
-          )
+        ? orderedFiles.filter((file) => {
+            if (
+              hideViewedFiles &&
+              usesViewedFileState(state.source) &&
+              viewed[file.path] === file.fingerprint
+            ) {
+              return false;
+            }
+
+            return (
+              fuzzyMatches(file.path, fileSearchQuery) && fileHasVisibleDiff(file, showWhitespace)
+            );
+          })
         : [],
-    [fileSearchQuery, orderedFiles, showWhitespace, state],
+    [fileSearchQuery, hideViewedFiles, orderedFiles, showWhitespace, state, viewed],
   );
 
   const diffSearchResults = useMemo(
@@ -1284,6 +1314,118 @@ export default function App() {
     window.location.reload();
   }, []);
 
+  const showReviewFeedback = useCallback((message: string) => {
+    setReviewFeedbackMessage(message);
+    if (reviewFeedbackTimerRef.current != null) {
+      window.clearTimeout(reviewFeedbackTimerRef.current);
+    }
+    reviewFeedbackTimerRef.current = window.setTimeout(() => {
+      setReviewFeedbackMessage(null);
+      reviewFeedbackTimerRef.current = null;
+    }, 2500);
+  }, []);
+
+  const refreshCurrentSource = useCallback(() => {
+    const currentState = stateRef.current;
+    if (!currentState) {
+      return Promise.resolve();
+    }
+
+    const sourceKey = getSourceKey(currentState.source);
+    return window.codiff.getRepositoryState(currentState.source).then((nextState) => {
+      if (!stateRef.current || getSourceKey(stateRef.current.source) !== sourceKey) {
+        return;
+      }
+
+      const orderedState = {
+        ...nextState,
+        files: sortFiles(nextState.files),
+      };
+      const currentSelectedPath = selectedPathRef.current;
+      const nextSelectedPath =
+        currentSelectedPath && orderedState.files.some((file) => file.path === currentSelectedPath)
+          ? currentSelectedPath
+          : (orderedState.files[0]?.path ?? null);
+
+      setState(orderedState);
+      setSelectedPath(nextSelectedPath);
+      setReviewComments((current) =>
+        current.filter((comment) =>
+          orderedState.files.some((file) => file.path === comment.filePath),
+        ),
+      );
+      setCollapsed((current) => {
+        const next = new Set<string>();
+        for (const path of current) {
+          if (orderedState.files.some((file) => file.path === path)) {
+            next.add(path);
+          }
+        }
+        return next;
+      });
+      setViewed((current) => {
+        const next: Record<string, string> = {};
+        for (const file of orderedState.files) {
+          if (current[file.path] === file.fingerprint) {
+            next[file.path] = file.fingerprint;
+          }
+        }
+        if (usesViewedFileState(orderedState.source)) {
+          writeViewed(orderedState.root, next);
+        }
+        return next;
+      });
+      setItemVersionByKey({});
+      setLocalChangesDetected(false);
+      setReloadDeltaPaths(new Set());
+    });
+  }, []);
+
+  const toggleHideViewedFiles = useCallback(() => {
+    setHideViewedFiles((current) => !current);
+  }, []);
+
+  const collapseAllFiles = useCallback(() => {
+    const currentState = stateRef.current;
+    if (!currentState) {
+      return;
+    }
+
+    setCollapsed(new Set(currentState.files.map((file) => file.path)));
+    setItemVersionByKey({});
+  }, []);
+
+  const expandAllFiles = useCallback(() => {
+    setCollapsed(new Set());
+    setItemVersionByKey({});
+  }, []);
+
+  const toggleDiffLayout = useCallback(() => {
+    const nextDiffStyle = preferencesRef.current.diffStyle === 'split' ? 'unified' : 'split';
+    void window.codiff.setDiffStyle(nextDiffStyle).catch(() => {});
+  }, []);
+
+  const discardWorkingTreeFile = useCallback(
+    (path: string) => {
+      const currentState = stateRef.current;
+      if (currentState?.source.type !== 'working-tree') {
+        return;
+      }
+
+      if (!window.confirm(`Discard all changes to ${path}?`)) {
+        return;
+      }
+
+      void window.codiff
+        .discardWorkingTreeFile({ path })
+        .then(() => refreshCurrentSource())
+        .catch((error: unknown) => {
+          window.alert(error instanceof Error ? error.message : String(error));
+        });
+    },
+    [refreshCurrentSource],
+  );
+
   // Commit the files a reviewer chose from the walkthrough's staging set. The
   // working-tree watcher surfaces a "reload to see changes" banner afterwards.
   const commitWalkthrough = useCallback(
@@ -1366,6 +1508,7 @@ export default function App() {
           setCollapsed(new Set(nextCollapsed));
           setItemVersionByKey({});
           setReviewComments(session?.reviewComments ?? getReviewCommentsFromState(orderedState));
+          setHideViewedFiles(session?.hideViewedFiles ?? false);
           setReloadDeltaPaths(new Set());
           setViewed(nextViewed);
           setSelectedPath(nextSelectedPath);
@@ -1896,7 +2039,35 @@ export default function App() {
 
   const deleteComment = useCallback(
     (commentId: string) => {
+      const currentState = stateRef.current;
       const comment = reviewCommentsRef.current.find((candidate) => candidate.id === commentId);
+      const githubCommentId = getGitHubCommentDatabaseId(commentId);
+
+      if (currentState?.source.type === 'pull-request' && githubCommentId && comment?.isReadOnly) {
+        if (!window.confirm('Delete this comment on GitHub?')) {
+          return;
+        }
+
+        void window.codiff
+          .deletePullRequestComment({
+            commentId,
+            source: currentState.source,
+          })
+          .then(() => {
+            setFocusCommentId((current) => (current === commentId ? null : current));
+            setReviewComments((current) =>
+              current.filter((candidate) => candidate.id !== commentId),
+            );
+            if (comment) {
+              bumpItemVersion(comment.filePath);
+            }
+          })
+          .catch((error: unknown) => {
+            window.alert(error instanceof Error ? error.message : String(error));
+          });
+        return;
+      }
+
       setFocusCommentId((current) => (current === commentId ? null : current));
       setReviewComments((current) => current.filter((candidate) => candidate.id !== commentId));
       if (comment) {
@@ -2082,6 +2253,9 @@ export default function App() {
           setReviewComments((current) =>
             current.filter((comment) => !pendingCommentIds.has(comment.id)),
           );
+          showReviewFeedback(
+            event === 'APPROVE' ? 'Pull request approved' : 'Changes requested on pull request',
+          );
         })
         .catch((error: unknown) => {
           window.alert(error instanceof Error ? error.message : String(error));
@@ -2090,7 +2264,7 @@ export default function App() {
           setPullRequestReviewSubmitting(null);
         });
     },
-    [pullRequestReviewSubmitting],
+    [pullRequestReviewSubmitting, showReviewFeedback],
   );
 
   const installTerminalHelper = useCallback(() => {
@@ -2363,6 +2537,7 @@ export default function App() {
       <KeyboardShortcutsHelp keymap={codiffConfig.keymap} visible={shortcutsHelpVisible} />
       {!isSwitchingSource ? (
         <div className="review-action-bar">
+          <DiffLayoutToggle diffStyle={diffStyle} onToggle={toggleDiffLayout} />
           <CopyCommentsButton
             comments={reviewComments}
             files={orderedFiles}
@@ -2378,6 +2553,7 @@ export default function App() {
           ) : null}
         </div>
       ) : null}
+      <ReviewFeedbackToast message={reviewFeedbackMessage} />
       <aside className="squircle sidebar">
         <div className="sidebar-header">
           <div className="sidebar-path-row">
@@ -2414,6 +2590,7 @@ export default function App() {
           commitViewOpen={showPlainCommitView}
           currentSource={pendingSource ?? state.source}
           files={visibleFiles}
+          hideViewedFiles={hideViewedFiles}
           historyEntries={historyEntries}
           historyHasMore={historyHasMore}
           historyLoading={historyLoading}
@@ -2422,6 +2599,13 @@ export default function App() {
           narrativeNavigation={narrativeNavigation}
           narrativeWalkthrough={narrativeWalkthrough}
           onActivatePath={activatePath}
+          onCollapseAllFiles={collapseAllFiles}
+          onDiscardWorkingTreeFile={
+            (pendingSource ?? state.source).type === 'working-tree'
+              ? discardWorkingTreeFile
+              : undefined
+          }
+          onExpandAllFiles={expandAllFiles}
           onLoadMoreHistory={loadMoreHistory}
           onModeChange={changeSidebarMode}
           onSearchQueryChange={
@@ -2431,11 +2615,16 @@ export default function App() {
           onSelectSource={selectSource}
           onShareWalkthrough={enabledShareWalkthrough}
           onToggleCommitView={showPlainCommitView ? closeCommitView : openCommitView}
+          onToggleHideViewedFiles={toggleHideViewedFiles}
           pullRequestSource={historySource?.type === 'pull-request' ? historySource : null}
           reloadDeltaPaths={reloadDeltaPaths}
           searchQuery={sidebarMode === 'history' ? historySearchQuery : fileSearchQuery}
           selectedPath={visibleSelectedPath}
           shareWalkthroughDisabled={walkthroughSharing}
+          showCollapseControls={sidebarMode === 'tree'}
+          showHideViewedToggle={
+            sidebarMode === 'tree' && usesViewedFileState(pendingSource ?? state.source)
+          }
           showWhitespace={showWhitespace}
           viewed={viewed}
           walkthroughError={walkthroughError}

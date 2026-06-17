@@ -561,6 +561,15 @@ export type PullRequestExistingReviewComment = PullRequestReviewComment & {
 
 export type PullRequestReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
+export type DeletePullRequestCommentRequest = {
+  commentId: string;
+  source: Extract<ReviewSource, { type: 'pull-request' }>;
+};
+
+export type DiscardWorkingTreeFileRequest = {
+  path: string;
+};
+
 export type SubmitPullRequestCommentRequest = {
   comment: PullRequestReviewComment;
   source: Extract<ReviewSource, { type: 'pull-request' }>;

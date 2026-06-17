@@ -893,6 +893,35 @@ const normalizePullRequestComment = (comment) => {
   return payload;
 };
 
+/** @param {string} commentId */
+const parseGitHubCommentDatabaseId = (commentId) => {
+  const prefix = 'github:';
+  if (!commentId.startsWith(prefix)) {
+    return null;
+  }
+
+  const databaseId = commentId.slice(prefix.length);
+  return /^\d+$/.test(databaseId) ? databaseId : null;
+};
+
+/** @param {string} launchPath @param {import('../../src/types.ts').DeletePullRequestCommentRequest} request */
+const deletePullRequestComment = async (launchPath, request) => {
+  const databaseId = parseGitHubCommentDatabaseId(request.commentId);
+  if (!databaseId) {
+    throw new Error('Codiff could not identify this GitHub review comment.');
+  }
+
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const pullRequest = parseGitHubPullRequestUrl(request.source.url);
+  await assertPullRequestMatchesRepository(repoRoot, pullRequest);
+
+  await ghApi(repoRoot, [
+    '-X',
+    'DELETE',
+    `repos/${pullRequest.owner}/${pullRequest.repo}/pulls/comments/${databaseId}`,
+  ]);
+};
+
 /** @param {string} launchPath @param {SubmitPullRequestCommentRequest} request */
 const submitPullRequestComment = async (launchPath, request) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
@@ -956,12 +985,14 @@ module.exports = {
   createPullRequestHistoryFetchRefspecs,
   createPullRequestSection,
   createPullRequestSource,
+  deletePullRequestComment,
   getPullRequestHeadImageSource,
   listPullRequestHistory,
   normalizeGitHubCommit,
   normalizeGitHubPullRequestCommit,
   normalizeGitHubReviewComment,
   normalizePullRequestComment,
+  parseGitHubCommentDatabaseId,
   parseGitHubPullRequestUrl,
   readPullRequestImageContent,
   readPullRequestState,

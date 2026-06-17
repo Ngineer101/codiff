@@ -322,6 +322,17 @@ export const getVisibleReviewComments = (
 ): ReadonlyArray<ReviewComment> =>
   showOutdated ? comments : comments.filter((comment) => !comment.isOutdated);
 
+export const getGitHubCommentDatabaseId = (commentId: string) =>
+  commentId.startsWith('github:') ? commentId.slice('github:'.length) : null;
+
+export const canDeleteSubmittedPullRequestComment = (
+  comment: ReviewComment,
+  isPullRequest: boolean,
+) => isPullRequest && Boolean(comment.isReadOnly) && getGitHubCommentDatabaseId(comment.id) != null;
+
+export const canDeleteReviewComment = (comment: ReviewComment, isPullRequest: boolean) =>
+  !comment.isReadOnly || canDeleteSubmittedPullRequestComment(comment, isPullRequest);
+
 export const shouldDiscardReviewCommentOnEscape = (
   body: string,
   confirmDiscard: (message: string) => boolean = window.confirm,

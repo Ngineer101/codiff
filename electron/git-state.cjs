@@ -27,6 +27,7 @@ const {
   readPullRequestState,
   resolvePullRequestContentRefs,
   selectUnresolvedReviewComments,
+  deletePullRequestComment,
   submitPullRequestComment,
   submitPullRequestReview,
 } = require('./git-state/pull-request.cjs');
@@ -43,6 +44,7 @@ const {
 } = require('./git-state/merge-request.cjs');
 const { parseReviewUrl } = require('./review-source.cjs');
 const {
+  discardWorkingTreeFile,
   readDiffSectionContent: readWorkingTreeDiffSectionContent,
   readDiffImageContent: readWorkingTreeDiffImageContent,
   readGitIdentity,
@@ -162,6 +164,8 @@ module.exports = {
   parseGitHubPullRequestUrl,
   parseGitLabMergeRequestUrl,
   selectUnresolvedReviewComments,
+  deletePullRequestComment,
+  discardWorkingTreeFile,
   readBranchState,
   readDiffSectionContent,
   readDiffImageContent,

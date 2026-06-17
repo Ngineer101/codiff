@@ -13,6 +13,9 @@ const codiff = {
   getAgentSkillStatus: () => ipcRenderer.invoke('codiff:getAgentSkillStatus'),
   getConfig: () => ipcRenderer.invoke('codiff:getConfig'),
   decreaseCodeFontSize: () => ipcRenderer.invoke('codiff:decreaseCodeFontSize'),
+  deletePullRequestComment: (request) =>
+    ipcRenderer.invoke('codiff:deletePullRequestComment', request),
+  discardWorkingTreeFile: (request) => ipcRenderer.invoke('codiff:discardWorkingTreeFile', request),
   getDiffSectionContent: (request) => ipcRenderer.invoke('codiff:getDiffSectionContent', request),
   getFeatureFlags: () => ipcRenderer.invoke('codiff:getFeatureFlags'),
   getDiffImageContent: (request) => ipcRenderer.invoke('codiff:getDiffImageContent', request),

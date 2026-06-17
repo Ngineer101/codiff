@@ -96,6 +96,8 @@ const createCodiffMock = (overrides: Partial<Window['codiff']> = {}): Window['co
     status: 'committed' as const,
   })),
   decreaseCodeFontSize: vi.fn(async () => {}),
+  deletePullRequestComment: vi.fn(async () => {}),
+  discardWorkingTreeFile: vi.fn(async () => {}),
   getAgentBackends: vi.fn(async () => [
     { id: 'codex' as const, label: 'Codex' },
     { id: 'claude' as const, label: 'Claude Code' },
