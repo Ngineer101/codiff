@@ -47,9 +47,11 @@ This skill is just the handoff: fetch the guide, author the document, open Codif
    node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json pr 123 /path/to/repository
    ```
 
-   The launcher passes `CLAUDE_SESSION_ID` to Codiff with `--agent claude` so follow-up
-   questions reuse this conversation. Codiff validates and repairs the document against the
-   live diff, so anchors that drift are pinned to a real section rather than dropped.
+   **Agent integration:** The launcher passes `CLAUDE_SESSION_ID` to Codiff with
+   `--agent claude` so follow-up questions reuse this conversation.
+
+   Codiff validates and repairs the document against the live diff, so anchors that drift
+   are pinned to a real section rather than dropped.
 
 Emit JSON only into the file. Do not summarize the conversation back to the user; the skill
 is a handoff into Codiff.

@@ -696,6 +696,45 @@ test('Pi skill launcher resolves the current session and forwards --agent pi', a
   }
 });
 
+test('OpenCode skill launcher uses the current project without changing the runtime backend', async () => {
+  const logger = await createFakeCommandLogger('codiff-opencode-launcher-', 'codiff');
+  const repositoryPath = join(logger.directory, 'repo');
+  const walkthroughFile = join(logger.directory, 'walkthrough.json');
+
+  try {
+    await mkdir(repositoryPath, { recursive: true });
+    const realRepositoryPath = await realpath(repositoryPath);
+    await writeFile(walkthroughFile, '{}');
+
+    await execFileAsync(
+      process.execPath,
+      [
+        resolve('opencode/skills/codiff/scripts/open-codiff.mjs'),
+        '--file',
+        walkthroughFile,
+        'HEAD',
+      ],
+      {
+        cwd: repositoryPath,
+        env: {
+          ...logger.env,
+          CODIFF_COMMAND: logger.commandPath,
+        },
+      },
+    );
+
+    expect(await logger.readArgs()).toEqual([
+      '-w',
+      '--walkthrough-file',
+      walkthroughFile,
+      'HEAD',
+      realRepositoryPath,
+    ]);
+  } finally {
+    await logger.cleanup();
+  }
+});
+
 test('packaged terminal helper forwards the agent and Claude session to Electron', async () => {
   const logger = await createFakeOpenLogger();
   const repositoryPath = join(logger.directory, 'repo');

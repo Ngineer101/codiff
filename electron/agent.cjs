@@ -37,10 +37,6 @@ const { readPiSessionContext } = require('./pi-session-context.cjs');
  *   ) => Promise<string>;
  *   readSessionContext: (sessionId: string | undefined) => WalkthroughContext | null;
  *   sessionLaunchOptionKey: 'codexSessionId' | 'claudeSessionId' | 'piSessionId';
- *   skill?: {
- *     label: string;
- *     targets: Array<{sourceSubdir: string; targetSubdir: string}>;
- *   };
  * }} Agent
  */
 
@@ -64,10 +60,6 @@ const createCodexAgent = () => ({
   run: codex.runCodex,
   readSessionContext: readCodexSessionContext,
   sessionLaunchOptionKey: 'codexSessionId',
-  skill: {
-    label: 'Codex Skill',
-    targets: [{ sourceSubdir: 'codex/skills/codiff', targetSubdir: '.codex/skills/codiff' }],
-  },
 });
 
 /** @returns {Agent} */
@@ -86,10 +78,6 @@ const createClaudeAgent = () => ({
   run: claude.runClaude,
   readSessionContext: readClaudeSessionContext,
   sessionLaunchOptionKey: 'claudeSessionId',
-  skill: {
-    label: 'Claude Code Skill',
-    targets: [{ sourceSubdir: 'claude/skills/codiff', targetSubdir: '.claude/skills/codiff' }],
-  },
 });
 
 /** @returns {Agent} */
@@ -108,10 +96,6 @@ const createPiAgent = () => ({
   run: pi.runPi,
   readSessionContext: readPiSessionContext,
   sessionLaunchOptionKey: 'piSessionId',
-  skill: {
-    label: 'Pi Skill',
-    targets: [{ sourceSubdir: 'pi/skills/codiff', targetSubdir: '.pi/agent/skills/codiff' }],
-  },
 });
 
 /** @type {Record<'codex' | 'claude' | 'pi', () => Agent>} */

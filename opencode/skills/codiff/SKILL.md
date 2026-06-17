@@ -47,8 +47,8 @@ This skill is just the handoff: fetch the guide, author the document, open Codif
    node scripts/open-codiff.mjs --file /tmp/codiff-walkthrough-<id>.json pr 123 /path/to/repository
    ```
 
-   **Agent integration:** The launcher passes `CODEX_THREAD_ID` to Codiff with
-   `--agent codex` so follow-up questions reuse this conversation.
+   **Agent integration:** OpenCode does not expose session metadata to this launcher, so it
+   opens the authored walkthrough without changing Codiff's configured runtime backend.
 
    Codiff validates and repairs the document against the live diff, so anchors that drift
    are pinned to a real section rather than dropped.

@@ -173,9 +173,9 @@ Set `settings.walkthroughPrompt` to add custom instructions to generated walkthr
 to request a specific language, tone, or level of detail while Codiff keeps its walkthrough guide,
 hunk ids, review-order constraints, and JSON schema in place.
 
-To drive Codiff from your agent, install its skills from the application menu (`Install Codex Skill`
-or `Install Claude Code Skill`). Codiff updates keep the installed skill current. Invoke it from the
-agent:
+To drive Codiff from your agent, install its skill from the application menu under
+`Install Skill`, then choose Codex, Claude Code, Pi, or OpenCode. Codiff updates keep the installed
+skill current. Invoke it from the agent:
 
 ```text
 $codiff       /codiff        # author a narrative walkthrough and open Codiff

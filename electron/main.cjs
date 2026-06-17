@@ -34,6 +34,7 @@ const { diagnoseWalkthroughMismatch } = require('./walkthrough-diagnosis.cjs');
 const { readCommitMessageReply } = require('./walkthrough-commit-message.cjs');
 const { normalizePiModel } = require('./pi.cjs');
 const { getAgent, listAgents, normalizeAgentBackend } = require('./agent.cjs');
+const { buildInstallSkillMenuItem, listAgentSkills } = require('./agent-skills.cjs');
 const {
   configToPreferences,
   createDefaultConfig,
@@ -111,26 +112,18 @@ const canUseWalkthroughSharing = () => {
 };
 
 /**
- * @type {Map<
- *   'codex' | 'claude' | 'pi',
- *   { agent: import('./agent.cjs').Agent; installer: ReturnType<typeof createSkillInstaller> }
- * >}
+ * @type {Map<string, ReturnType<typeof createSkillInstaller>>}
  */
 const skillInstallers = new Map(
-  listAgents()
-    .filter((agent) => agent.skill !== undefined)
-    .map((agent) => [
-      agent.id,
-      {
-        agent,
-        installer: createSkillInstaller({
-          app,
-          dialog,
-          root,
-          skill: agent.skill,
-        }),
-      },
-    ]),
+  listAgentSkills().map((skill) => [
+    skill.id,
+    createSkillInstaller({
+      app,
+      dialog,
+      root,
+      skill,
+    }),
+  ]),
 );
 
 const getActiveAgent = () => getAgent(config.settings.agentBackend);
@@ -152,7 +145,7 @@ const resolveWindowAgent = (webContentsId) => {
 };
 
 /** @param {'codex' | 'claude' | 'pi'} agentId */
-const skillInstallerFor = (agentId) => skillInstallers.get(agentId)?.installer;
+const skillInstallerFor = (agentId) => skillInstallers.get(agentId);
 const { getTerminalHelperStatus, installTerminalHelper } = createTerminalHelper({
   app,
   dialog,
@@ -401,18 +394,10 @@ const buildModelSubmenu = () => {
   }));
 };
 
-/** @returns {Array<import('electron').MenuItemConstructorOptions>} */
-const buildSkillMenuItems = () =>
-  listAgents()
-    .filter((agent) => agent.skill)
-    .map((agent) => ({
-      click:
-        /** @type {NonNullable<import('electron').MenuItemConstructorOptions['click']>} */ (
-          (_menuItem, browserWindow) =>
-            void skillInstallers.get(agent.id)?.installer.install(browserWindow)
-        ),
-      label: `Install ${agent.skill?.label ?? agent.label}`,
-    }));
+const getInstallSkillMenuItem = () =>
+  buildInstallSkillMenuItem(
+    (skill, browserWindow) => void skillInstallers.get(skill.id)?.install(browserWindow),
+  );
 
 /** @returns {import('electron').Menu} */
 const buildApplicationMenu = () =>
@@ -448,7 +433,7 @@ const buildApplicationMenu = () =>
                     ),
                   label: 'Install Terminal Helper',
                 },
-                ...buildSkillMenuItems(),
+                getInstallSkillMenuItem(),
                 { type: 'separator' },
                 { role: 'hide' },
                 { role: 'hideOthers' },
@@ -488,7 +473,7 @@ const buildApplicationMenu = () =>
                     ),
                   label: 'Install Terminal Helper',
                 },
-                ...buildSkillMenuItems(),
+                getInstallSkillMenuItem(),
                 { type: 'separator' },
               ]),
           {

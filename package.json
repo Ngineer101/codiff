@@ -22,6 +22,7 @@
     "core",
     "dist",
     "electron",
+    "opencode",
     "pi",
     "shared"
   ],
