@@ -1,6 +1,8 @@
 import { CaretDownIcon as CaretDown } from '@phosphor-icons/react/CaretDown';
 import { CaretUpIcon as CaretUp } from '@phosphor-icons/react/CaretUp';
 import { CheckIcon as Check } from '@phosphor-icons/react/Check';
+import { ColumnsIcon as Columns } from '@phosphor-icons/react/Columns';
+import { SquareSplitVerticalIcon as SquareSplitVertical } from '@phosphor-icons/react/SquareSplitVertical';
 import { XIcon as X } from '@phosphor-icons/react/X';
 import { Copy as LucideCopy } from 'lucide-react';
 import {
@@ -11,7 +13,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { matchesShortcut } from '../../config/keymap.ts';
-import type { CodiffKeymap } from '../../config/types.ts';
+import type { CodiffDiffStyle, CodiffKeymap } from '../../config/types.ts';
 import type { RepositoryLoadError, ReviewComment } from '../../lib/app-types.ts';
 import { getReloadShortcutLabel } from '../../lib/keyboard.ts';
 import { buildReviewCommentsMarkdown } from '../../lib/review-comments.ts';
@@ -246,6 +248,45 @@ export function DiffSearchPanel({
       <button aria-label="Close search" onClick={onClose} title="Close" type="button">
         <X aria-hidden className="diff-search-icon" size={15} weight="bold" />
       </button>
+    </div>
+  );
+}
+
+export function DiffLayoutToggle({
+  diffStyle,
+  onToggle,
+}: {
+  diffStyle: CodiffDiffStyle;
+  onToggle: () => void;
+}) {
+  const isSplit = diffStyle === 'split';
+
+  return (
+    <button
+      aria-label={isSplit ? 'Switch to unified diff' : 'Switch to split diff'}
+      aria-pressed={isSplit}
+      className="diff-layout-toggle"
+      onClick={onToggle}
+      title={isSplit ? 'Unified diff' : 'Split diff'}
+      type="button"
+    >
+      {isSplit ? (
+        <Columns aria-hidden size={21} weight="bold" />
+      ) : (
+        <SquareSplitVertical aria-hidden size={21} weight="bold" />
+      )}
+    </button>
+  );
+}
+
+export function ReviewFeedbackToast({ message }: { message: string | null }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div aria-live="polite" className="review-feedback-toast" role="status">
+      {message}
     </div>
   );
 }

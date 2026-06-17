@@ -427,6 +427,37 @@ const gitOrEmpty = async (repoRoot, args) => {
   }
 };
 
+/** @param {string} repoRoot @param {StatusItem} item @param {string} path */
+const restoreWorkingTreePath = async (repoRoot, item, path) => {
+  if (item.staged) {
+    await git(repoRoot, ['restore', '--staged', '--', path]);
+    if (item.oldPath && item.oldPath !== path) {
+      await git(repoRoot, ['restore', '--staged', '--', item.oldPath]);
+    }
+  }
+
+  const nextItem = await getStatusItemForPath(repoRoot, path);
+  if (nextItem.untracked) {
+    await git(repoRoot, ['clean', '-fd', '--', path]);
+    return;
+  }
+
+  if (nextItem.unstaged || nextItem.status === 'deleted') {
+    await git(repoRoot, ['restore', '--', path]);
+    if (nextItem.oldPath && nextItem.oldPath !== path && nextItem.status === 'renamed') {
+      await git(repoRoot, ['restore', '--', nextItem.oldPath]);
+    }
+  }
+};
+
+/** @param {string} launchPath @param {{ path: string }} request */
+const discardWorkingTreeFile = async (launchPath, request) => {
+  const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
+  const path = validateRepositoryPath(request.path);
+  const item = await getStatusItemForPath(repoRoot, path);
+  await restoreWorkingTreePath(repoRoot, item, path);
+};
+
 /** @param {string} launchPath */
 const readGitIdentity = async (launchPath) => {
   const repoRoot = (await git(launchPath, ['rev-parse', '--show-toplevel'])).trim();
@@ -460,6 +491,7 @@ const readRepositoryChangeSignature = async (launchPath) => {
 };
 
 module.exports = {
+  discardWorkingTreeFile,
   getStatusItemForPath,
   listUntrackedItems,
   readDiffSectionContent,
@@ -467,4 +499,5 @@ module.exports = {
   readGitIdentity,
   readRepositoryChangeSignature,
   readWorkingTreeState,
+  restoreWorkingTreePath,
 };

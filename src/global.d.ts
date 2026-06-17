@@ -7,6 +7,8 @@ import type {
   DiffImageContentResult,
   DiffSection,
   DiffSectionContentRequest,
+  DeletePullRequestCommentRequest,
+  DiscardWorkingTreeFileRequest,
   GitIdentity,
   NarrativeWalkthroughResult,
   RepositoryHistory,
@@ -32,6 +34,8 @@ declare global {
         request: WalkthroughCommitRequest,
       ) => Promise<WalkthroughCommitResult>;
       decreaseCodeFontSize: () => Promise<void>;
+      deletePullRequestComment: (request: DeletePullRequestCommentRequest) => Promise<void>;
+      discardWorkingTreeFile: (request: DiscardWorkingTreeFileRequest) => Promise<void>;
       getAgentBackends: () => Promise<
         ReadonlyArray<{ id: CodiffPreferences['agentBackend']; label: string }>
       >;

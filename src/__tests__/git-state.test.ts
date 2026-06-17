@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -47,6 +47,7 @@ type GitStateModule = {
     oldFile?: PullRequestFileContent,
     newFile?: PullRequestFileContent,
   ) => DiffSection;
+  discardWorkingTreeFile: (launchPath: string, request: { path: string }) => Promise<void>;
   getPullRequestHeadImageSource: (
     pullRequest: { number: number; owner: string; repo: string; url: string },
     metadata: {
@@ -98,6 +99,7 @@ const {
   collectResolvedReviewCommentIds,
   createPullRequestHistoryFetchRefspecs,
   createPullRequestSection,
+  discardWorkingTreeFile,
   getPullRequestHeadImageSource,
   listRepositoryHistory,
   normalizeGitHubPullRequestCommit,
@@ -137,6 +139,8 @@ const writeRepoFile = async (repo: string, path: string, contents: string | Uint
   await mkdir(dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, contents);
 };
+
+const readRepoFile = async (repo: string, path: string) => readFile(join(repo, path), 'utf8');
 
 const commitAll = async (repo: string, message: string) => {
   await git(repo, ['add', '--all']);
@@ -627,6 +631,33 @@ test('readWorkingTreeState separates staged and unstaged modifications', async (
     expect(state.files[0].sections[0].newFile?.contents).toBe('two\n');
     expect(state.files[0].sections[1].oldFile?.contents).toBe('two\n');
     expect(state.files[0].sections[1].newFile?.contents).toBe('three\n');
+  });
+});
+
+test('discardWorkingTreeFile restores staged and unstaged working tree changes', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'file.txt', 'one\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'file.txt', 'two\n');
+    await git(repo, ['add', 'file.txt']);
+    await writeRepoFile(repo, 'file.txt', 'three\n');
+
+    await discardWorkingTreeFile(repo, { path: 'file.txt' });
+
+    expect(await readRepoFile(repo, 'file.txt')).toBe('one\n');
+    expect(parseStatus(await git(repo, ['status', '--porcelain=v1', '-z', '-uall']))).toEqual([]);
+  });
+});
+
+test('discardWorkingTreeFile removes untracked files', async () => {
+  await withRepo(async (repo) => {
+    await writeRepoFile(repo, 'tracked.txt', 'tracked\n');
+    await commitAll(repo, 'initial commit');
+    await writeRepoFile(repo, 'new.txt', 'new\n');
+
+    await discardWorkingTreeFile(repo, { path: 'new.txt' });
+
+    await expect(readRepoFile(repo, 'new.txt')).rejects.toThrow();
   });
 });
 

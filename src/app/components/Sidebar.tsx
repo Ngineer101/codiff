@@ -1,3 +1,4 @@
+import { CheckIcon as Check } from '@phosphor-icons/react/Check';
 import type { FileTreeRowDecorationRenderer } from '@pierre/trees';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from 'react';
@@ -30,6 +31,7 @@ export function Sidebar({
   commitViewOpen,
   currentSource,
   files,
+  hideViewedFiles,
   historyEntries,
   historyHasMore,
   historyLoading,
@@ -38,16 +40,22 @@ export function Sidebar({
   narrativeNavigation,
   narrativeWalkthrough,
   onActivatePath,
+  onCollapseAllFiles,
+  onDiscardWorkingTreeFile,
+  onExpandAllFiles,
   onLoadMoreHistory,
   onModeChange,
   onSearchQueryChange,
   onSelectPath,
   onSelectSource,
   onToggleCommitView,
+  onToggleHideViewedFiles,
   pullRequestSource,
   reloadDeltaPaths,
   searchQuery,
   selectedPath,
+  showCollapseControls,
+  showHideViewedToggle,
   showWhitespace,
   walkthroughError,
   walkthroughLoading,
@@ -58,6 +66,7 @@ export function Sidebar({
   commitViewOpen: boolean;
   currentSource: ReviewSource;
   files: ReadonlyArray<ChangedFile>;
+  hideViewedFiles: boolean;
   historyEntries: ReadonlyArray<HistoryEntry>;
   historyHasMore: boolean;
   historyLoading: boolean;
@@ -66,16 +75,22 @@ export function Sidebar({
   narrativeNavigation: NarrativeNavigation;
   narrativeWalkthrough: NarrativeWalkthrough | null;
   onActivatePath: (path: string) => void;
+  onCollapseAllFiles: () => void;
+  onDiscardWorkingTreeFile?: (path: string) => void;
+  onExpandAllFiles: () => void;
   onLoadMoreHistory: () => void;
   onModeChange: (mode: SidebarMode) => void;
   onSearchQueryChange: (query: string) => void;
   onSelectPath: (path: string) => void;
   onSelectSource: (source: ReviewSource) => void;
   onToggleCommitView: () => void;
+  onToggleHideViewedFiles: () => void;
   pullRequestSource: PullRequestSource | null;
   reloadDeltaPaths: ReadonlySet<string>;
   searchQuery: string;
   selectedPath: string | null;
+  showCollapseControls: boolean;
+  showHideViewedToggle: boolean;
   showWhitespace: boolean;
   walkthroughError: WalkthroughError | null;
   walkthroughLoading: boolean;
@@ -230,6 +245,28 @@ export function Sidebar({
     [filePathSet, onActivatePath],
   );
 
+  const handleTreeContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!onDiscardWorkingTreeFile) {
+        return;
+      }
+
+      for (const target of event.nativeEvent.composedPath()) {
+        if (!('getAttribute' in target) || typeof target.getAttribute !== 'function') {
+          continue;
+        }
+
+        const path = target.getAttribute('data-item-path');
+        if (path && filePathSet.has(path)) {
+          event.preventDefault();
+          onDiscardWorkingTreeFile(path);
+          return;
+        }
+      }
+    },
+    [filePathSet, onDiscardWorkingTreeFile],
+  );
+
   useEffect(
     () => () => {
       if (allowSelectionScrollTimer.current != null) {
@@ -286,6 +323,18 @@ export function Sidebar({
           type="search"
           value={searchQuery}
         />
+        {showHideViewedToggle ? (
+          <button
+            aria-label={hideViewedFiles ? 'Show viewed files' : 'Hide viewed files'}
+            aria-pressed={hideViewedFiles}
+            className={`sidebar-filter-button${hideViewedFiles ? ' active' : ''}`}
+            onClick={onToggleHideViewedFiles}
+            title={hideViewedFiles ? 'Show viewed files' : 'Hide viewed files'}
+            type="button"
+          >
+            <Check aria-hidden size={14} weight="bold" />
+          </button>
+        ) : null}
       </div>
       <div aria-label="Review order" className="sidebar-mode-toggle" role="tablist">
         <button
@@ -349,10 +398,15 @@ export function Sidebar({
         </>
       ) : (
         <div className="file-tree-shell" ref={treeHostRef}>
-          <FileTree className="file-tree" model={model} onClick={handleTreeClick} />
+          <FileTree
+            className="file-tree"
+            model={model}
+            onClick={handleTreeClick}
+            onContextMenu={handleTreeContextMenu}
+          />
         </div>
       )}
-      {showFooter ? (
+      {showFooter || showCollapseControls ? (
         <div className="sidebar-total-row">
           <span className="sidebar-total-summary">
             {showTotalLineCount ? (
@@ -366,16 +420,38 @@ export function Sidebar({
               </>
             ) : null}
           </span>
-          {showCommitButton ? (
-            <button
-              aria-label={commitViewOpen ? 'Show file tree' : 'Open commit view'}
-              className="codiff-open-button sidebar-commit-button"
-              onClick={onToggleCommitView}
-              type="button"
-            >
-              {commitViewOpen ? 'Tree' : 'Commit'}
-            </button>
-          ) : null}
+          <span className="sidebar-footer-actions">
+            {showCollapseControls ? (
+              <>
+                <button
+                  className="sidebar-tree-action"
+                  onClick={onExpandAllFiles}
+                  title="Expand all files"
+                  type="button"
+                >
+                  Expand
+                </button>
+                <button
+                  className="sidebar-tree-action"
+                  onClick={onCollapseAllFiles}
+                  title="Collapse all files"
+                  type="button"
+                >
+                  Collapse
+                </button>
+              </>
+            ) : null}
+            {showCommitButton ? (
+              <button
+                aria-label={commitViewOpen ? 'Show file tree' : 'Open commit view'}
+                className="codiff-open-button sidebar-commit-button"
+                onClick={onToggleCommitView}
+                type="button"
+              >
+                {commitViewOpen ? 'Tree' : 'Commit'}
+              </button>
+            ) : null}
+          </span>
         </div>
       ) : null}
     </>

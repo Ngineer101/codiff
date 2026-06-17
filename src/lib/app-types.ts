@@ -114,6 +114,7 @@ export type WalkthroughNote = {
 
 export type SourceSession = {
   collapsed: Set<string>;
+  hideViewedFiles: boolean;
   /** Populated by a generated or pre-authored narrative walkthrough document. */
   narrativeWalkthrough?: NarrativeWalkthrough | null;
   reviewComments: ReadonlyArray<ReviewComment>;

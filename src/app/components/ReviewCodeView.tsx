@@ -71,6 +71,7 @@ import { getItemVersion } from '../../lib/item-version.ts';
 import { isNativeInputTarget } from '../../lib/keyboard.ts';
 import { renderMarkdown } from '../../lib/markdown.tsx';
 import {
+  canDeleteReviewComment,
   getCommentKey,
   getReviewCommentLineLabel,
   getReviewCommentsDigest,
@@ -734,7 +735,7 @@ function ReviewAnnotation({
                       {comment.githubSubmit?.status === 'submitting' ? 'Sending' : 'Comment'}
                     </button>
                   ) : null}
-                  {!comment.isReadOnly ? (
+                  {canDeleteReviewComment(comment, isPullRequest) ? (
                     <button
                       aria-label="Delete comment"
                       className="review-comment-delete"

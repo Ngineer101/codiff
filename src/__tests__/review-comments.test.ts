@@ -1,6 +1,12 @@
 import { expect, test } from 'vite-plus/test';
 import type { ReviewComment } from '../lib/app-types.ts';
-import { getReviewCommentsFromState, getVisibleReviewComments } from '../lib/review-comments.ts';
+import {
+  canDeleteReviewComment,
+  canDeleteSubmittedPullRequestComment,
+  getGitHubCommentDatabaseId,
+  getReviewCommentsFromState,
+  getVisibleReviewComments,
+} from '../lib/review-comments.ts';
 import type { RepositoryState } from '../types.ts';
 
 const createReviewComment = (overrides: Partial<ReviewComment>): ReviewComment => ({
@@ -85,4 +91,36 @@ test('getVisibleReviewComments keeps user-authored comments that are never outda
   const comments = [createReviewComment({ id: 'draft', isReadOnly: false })];
 
   expect(getVisibleReviewComments(comments, false)).toHaveLength(1);
+});
+
+test('getGitHubCommentDatabaseId extracts numeric ids from github comment ids', () => {
+  expect(getGitHubCommentDatabaseId('github:123')).toBe('123');
+  expect(getGitHubCommentDatabaseId('draft')).toBeNull();
+});
+
+test('canDeleteSubmittedPullRequestComment matches submitted GitHub comments on pull requests', () => {
+  expect(
+    canDeleteSubmittedPullRequestComment(
+      createReviewComment({ id: 'github:9', isReadOnly: true }),
+      true,
+    ),
+  ).toBe(true);
+  expect(
+    canDeleteSubmittedPullRequestComment(
+      createReviewComment({ id: 'draft', isReadOnly: false }),
+      true,
+    ),
+  ).toBe(false);
+});
+
+test('canDeleteReviewComment allows deleting local drafts and submitted GitHub comments', () => {
+  expect(
+    canDeleteReviewComment(createReviewComment({ id: 'draft', isReadOnly: false }), true),
+  ).toBe(true);
+  expect(
+    canDeleteReviewComment(createReviewComment({ id: 'github:9', isReadOnly: true }), true),
+  ).toBe(true);
+  expect(
+    canDeleteReviewComment(createReviewComment({ id: 'github:9', isReadOnly: true }), false),
+  ).toBe(false);
 });

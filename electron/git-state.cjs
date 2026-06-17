@@ -27,10 +27,12 @@ const {
   readPullRequestState,
   resolvePullRequestContentRefs,
   selectUnresolvedReviewComments,
+  deletePullRequestComment,
   submitPullRequestComment,
   submitPullRequestReview,
 } = require('./git-state/pull-request.cjs');
 const {
+  discardWorkingTreeFile,
   readDiffSectionContent: readWorkingTreeDiffSectionContent,
   readDiffImageContent: readWorkingTreeDiffImageContent,
   readGitIdentity,
@@ -130,6 +132,8 @@ module.exports = {
   parseStatus,
   parseGitHubPullRequestUrl,
   selectUnresolvedReviewComments,
+  deletePullRequestComment,
+  discardWorkingTreeFile,
   readBranchState,
   readDiffSectionContent,
   readDiffImageContent,
