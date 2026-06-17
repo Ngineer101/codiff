@@ -35,6 +35,7 @@
     "electron": "electron .",
     "forge:make": "electron-forge make",
     "forge:package": "electron-forge package",
+    "install:local": "vp build && CODIFF_LOCAL_SIGNING=1 electron-forge package --platform=darwin --arch=$(node -p \"process.arch\") && node ./scripts/install-local.mjs",
     "link:global": "vp build && pnpm link --global",
     "make": "vp build && electron-forge make",
     "make:ci": "vp build && electron-forge make && electron-forge package --platform=linux --arch=x64 && electron-forge make --platform=win32",

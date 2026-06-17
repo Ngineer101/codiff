@@ -218,6 +218,13 @@ vp build
 vpr codiff
 ```
 
+To build the app and install a local `codiff` command for manual testing:
+
+```bash
+vpr install:local
+codiff --version
+```
+
 For live development:
 
 ```bash

@@ -15,6 +15,7 @@ const macAssetCatalogPath = existsSync(join(__dirname, 'electron/icons/Assets.ca
   : undefined;
 const linuxIconPath = './electron/icons/icon.png';
 const windowsIconPath = './electron/icons/icon.ico';
+const localSigning = process.env.CODIFF_LOCAL_SIGNING === '1';
 const skipSquirrel = process.env.CODIFF_SKIP_SQUIRREL === '1';
 const osxNotarize =
   process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID
@@ -133,8 +134,10 @@ module.exports = {
     ...(osxNotarize ? { osxNotarize } : {}),
     osxSign: {
       continueOnError: false,
-      hardenedRuntime: true,
-      identity: process.env.APPLE_SIGNING_IDENTITY,
+      hardenedRuntime: !localSigning,
+      identity: localSigning ? '-' : process.env.APPLE_SIGNING_IDENTITY,
+      identityValidation: !localSigning,
+      ...(localSigning ? { timestamp: 'none' } : {}),
       optionsForFile: () => ({
         entitlements: entitlementsPath,
       }),
